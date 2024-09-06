@@ -7,7 +7,7 @@ import time
 # Configurable update interval (in milliseconds)
 UPDATE_INTERVAL = 10000  # 10 seconds
 
-def update_feed(rss_feeds, content_frame, root):
+def update_feed(rss_feeds, content_frame, root, category_name):
     """
     Fetches and updates the feed for a given category, cycling through stories every 10 seconds.
     
@@ -15,6 +15,7 @@ def update_feed(rss_feeds, content_frame, root):
         rss_feeds (list): List of RSS feed URLs.
         content_frame (ttkb.Frame): The frame where the content will be displayed.
         root (ttkb.Window): The root window to handle refresh.
+        category_name (str): The name of the category being displayed.
     """
     current_story_index = 0
     feed_entries = []
@@ -39,8 +40,9 @@ def update_feed(rss_feeds, content_frame, root):
             current_story_index = (current_story_index + 1) % len(feed_entries)
 
             # Use root.after() to ensure UI updates are done on the main thread
-            root.after(0, lambda: clear_and_display_story(content_frame, story))
+            fade_in_story(content_frame, story)
 
+            # Recursively schedule the next story update
             root.after(UPDATE_INTERVAL, show_next_story)
 
     # Start cycling through stories
@@ -125,6 +127,34 @@ def display_progress_bar(parent_frame):
             progress_bar.after(UPDATE_INTERVAL // 100, update_bar, step + 1)
 
     update_bar()
+
+def fade_in_story(content_frame, story):
+    """
+    Creates a fade-in effect for displaying the new story.
+    
+    Args:
+        content_frame (ttkb.Frame): The frame where the story will be displayed.
+        story (dict): The story to display.
+    """
+    clear_and_display_story(content_frame, story)
+
+    # Retrieve the story frame to apply fade
+    story_frame = content_frame.winfo_children()[0]
+
+    # Create a canvas overlay to simulate fade-in effect
+    fade_canvas = tk.Canvas(story_frame, width=450, height=400, bg="black")
+    fade_canvas.place(x=0, y=0, relwidth=1, relheight=1)
+
+    def fade(step=0):
+        if step <= 1.0:
+            # Decrease canvas opacity to simulate fade-in
+            alpha = int(step * 255)
+            fade_canvas.configure(bg=f'#{alpha:02x}{alpha:02x}{alpha:02x}')
+            story_frame.after(50, fade, step + 0.05)
+        else:
+            fade_canvas.destroy()  # Remove the overlay once the fade-in is complete
+
+    fade()
 
 def open_link(url):
     """
