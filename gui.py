@@ -135,3 +135,14 @@ def open_link(url):
     """
     import webbrowser
     webbrowser.open(url)
+
+def add_category_label(parent_frame, category_name):
+    """
+    Adds a label to indicate the category of news being displayed.
+    
+    Args:
+        parent_frame (ttkb.Frame): The frame where the label will be added.
+        category_name (str): The name of the news category (e.g., 'Financial News').
+    """
+    label = ttkb.Label(parent_frame, text=category_name, font=("Helvetica", 18, "bold"), bootstyle="primary")
+    label.pack(pady=10)
