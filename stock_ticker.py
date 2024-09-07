@@ -16,6 +16,9 @@ STOCKS = [
     "PFE", "JNJ", "MRNA", "BMY", "LLY"
 ]
 
+# Global flag to track if Alpha Vantage has failed
+alpha_vantage_failed = False
+
 def fetch_stock_price(symbol):
     """
     Fetches real-time stock data from Alpha Vantage or falls back to Yahoo Finance API.
@@ -26,6 +29,12 @@ def fetch_stock_price(symbol):
     Returns:
         str: Stock price if successful, otherwise "N/A".
     """
+    global alpha_vantage_failed
+
+    # If Alpha Vantage has already failed, skip and go straight to Yahoo Finance
+    if alpha_vantage_failed:
+        return fetch_from_yahoo_finance(symbol)
+
     alpha_vantage_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={API_KEY}"
     
     try:
@@ -36,10 +45,12 @@ def fetch_stock_price(symbol):
             return data["Global Quote"]["05. price"]
         else:
             print(f"No price data for {symbol}. Full response: {data}")
-            raise Exception("Alpha Vantage API rate limit hit or no data.")
+            alpha_vantage_failed = True  # Set failure flag
+            return fetch_from_yahoo_finance(symbol)
     
     except Exception as e:
         print(f"Error fetching stock data from Alpha Vantage for {symbol}: {e}")
+        alpha_vantage_failed = True  # Set failure flag
         return fetch_from_yahoo_finance(symbol)
 
 def fetch_from_yahoo_finance(symbol):
