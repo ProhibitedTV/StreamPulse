@@ -10,6 +10,8 @@ GENERAL_RSS_FEEDS = [
     "https://www.theguardian.com/world/rss",  # The Guardian World News
     "https://news.un.org/feed/subscribe/en/news/all/rss.xml",  # United Nations News
     "https://www.aljazeera.com/xml/rss/all.xml",  # Al Jazeera News
+    "https://www.france24.com/en/rss",  # France24
+    "https://feeds.thelocal.com/rss/es"  # The Local Spain
 ]
 
 # Financial News Feeds
@@ -20,8 +22,9 @@ FINANCIAL_RSS_FEEDS = [
     "https://www.fool.com/feeds/index.aspx",  # The Motley Fool News
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",  # CNBC Financial News
     "https://www.kiplinger.com/feed/all",  # Kiplinger Financial News
-    "https://www.moneycontrol.com/rss/latestnews.xml",  # MoneyControl News
     "https://www.bloomberg.com/feed/podcast/trillions.xml",  # Bloomberg Financial News
+    "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",  # NYTimes Economy
+    "https://www.moneycontrol.com/rss/latestnews.xml",  # MoneyControl
 ]
 
 # Video Games Feeds
@@ -33,6 +36,7 @@ VIDEO_GAMES_RSS_FEEDS = [
     "https://www.gamespot.com/feeds/news/",  # GameSpot News
     "https://feeds.feedburner.com/RockPaperShotgun",  # Rock Paper Shotgun
     "https://www.eurogamer.net/?format=rss",  # Eurogamer
+    "https://www.reddit.com/r/gaming.rss",  # Reddit Gaming
 ]
 
 # Science and Tech News Feeds
@@ -44,6 +48,7 @@ SCIENCE_TECH_RSS_FEEDS = [
     "https://www.wired.com/feed/rss",  # Wired Tech and Science News
     "https://feeds.arstechnica.com/arstechnica/index/",  # Ars Technica
     "https://www.engadget.com/rss.xml",  # Engadget News
+    "https://www.newscientist.com/subject/space/feed/",  # New Scientist Space
 ]
 
 # Health and Environment Feeds
@@ -52,11 +57,10 @@ HEALTH_ENVIRONMENT_RSS_FEEDS = [
     "https://feeds.washingtonpost.com/rss/lifestyle/wellness",  # Washington Post Wellness
     "https://www.npr.org/rss/rss.php?id=1027",  # NPR Health News
     "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",  # NYTimes Health News
-    "https://feeds.nature.com/nature/rss/current",  # Nature News
-    "https://www.climatechangenews.com/feed/",  # Climate Change News
     "https://www.nationalgeographic.com/content/natgeo/en_us/rss/index.rss",  # National Geographic News
-    "https://www.scientificamerican.com/feed/",  # Scientific American
+    "https://www.climatechangenews.com/feed/",  # Climate Change News
     "https://feeds.feedburner.com/theecologist",  # The Ecologist News
+    "https://www.bbc.co.uk/news/science_and_environment/rss.xml",  # BBC Science & Environment
 ]
 
 # Entertainment News Feeds
@@ -65,10 +69,9 @@ ENTERTAINMENT_RSS_FEEDS = [
     "https://feeds.feedburner.com/ewallstreeter",  # Entertainment Weekly
     "https://www.tmz.com/rss.xml",  # TMZ
     "https://www.hollywoodreporter.com/t/entertainment/feed/",  # Hollywood Reporter
-    "https://feeds.feedburner.com/rollingstone/music",  # Rolling Stone
     "https://rss.etonline.com/latest",  # Entertainment Tonight
     "https://www.vanityfair.com/feed/rss",  # Vanity Fair Entertainment
     "https://www.billboard.com/feed",  # Billboard Music News
-    "https://feeds.feedburner.com/theavclub/daily",  # The A.V. Club
     "https://feeds.feedburner.com/slashfilm",  # Slash Film News
+    "https://www.reddit.com/r/movies.rss",  # Reddit Movies
 ]

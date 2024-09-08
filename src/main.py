@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import ttk
 import ttkbootstrap as ttkb
@@ -7,13 +8,18 @@ from feeds import GENERAL_RSS_FEEDS, FINANCIAL_RSS_FEEDS, VIDEO_GAMES_RSS_FEEDS,
 from stock_ticker import create_stock_ticker_frame
 from stats_widgets import add_global_stats, add_world_clock
 
+# Get the absolute path of the project root directory
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Construct the path to the images folder
+bg_image_path = os.path.join(project_root, 'images', 'bg.png')
+
 # GUI setup
 root = ttkb.Window(themename="darkly")
 root.title("StreamPulse - Dynamic News Display")
 root.attributes("-fullscreen", True)
 
 # Load the background image
-bg_image_path = "images/bg.png"
 bg_image = Image.open(bg_image_path)
 bg_image = bg_image.resize((1920, 1080), Image.Resampling.LANCZOS)
 bg_photo = ImageTk.PhotoImage(bg_image)
