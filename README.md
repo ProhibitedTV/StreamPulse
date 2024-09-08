@@ -1,59 +1,124 @@
 # StreamPulse
 
-StreamPulse is a dynamic news and stock ticker display application designed for live streaming. It scrapes multiple RSS news feeds across different categories and displays stories in a visually appealing, quadrant-based layout. Additionally, it provides real-time stock prices using the Alpha Vantage and Yahoo Finance APIs, making it perfect for capturing with OBS for live streaming purposes.
+StreamPulse is a dynamic news feed display application that fetches and displays live news from various RSS feeds, financial data, and other global stats in real-time. It is designed to be run locally, either using a Python virtual environment or in a Docker container for easier deployment and distribution.
 
 ## Features
 
-- **News Feeds**: Displays stories from categories like General, Financial, Video Games, and Science/Tech, dynamically updating them in their respective quadrants.
-- **Stock Ticker**: Real-time stock prices displayed in a scrolling ticker at the bottom of the screen, utilizing fallback support to Yahoo Finance in case Alpha Vantage's API limit is hit.
-- **UI Design**: Optimized for full-screen display on a 1080p monitor, with transitions between news stories and a smooth-scrolling stock ticker for an enhanced visual experience.
-  
-## Recent Improvements
+- **Dynamic News Feed**: Fetch and display live news from multiple sources using RSS feeds.
+- **Sentiment Analysis**: Leverage Ollama's local models for text analysis.
+- **Stock Ticker**: Real-time stock price updates using financial APIs.
+- **Global Stats**: Display global statistics such as CO2 emissions and US National Debt.
+- **World Clock**: Show current time in multiple time zones.
 
-- **Smooth Scrolling Stock Ticker**: The stock ticker now scrolls across the bottom of the screen, ensuring that all stock prices are visible without requiring manual scrolling. The ticker speed can be easily adjusted for a smoother display, and fallback to Yahoo Finance ensures reliability even when the Alpha Vantage API hits its request limit.
-- **Yahoo Finance Fallback**: If Alpha Vantage’s API rate limit is reached, the application seamlessly switches to Yahoo Finance for retrieving stock data. This guarantees continuous updates without interruptions.
-- **Improved Responsiveness**: The overall UI responsiveness has been enhanced to ensure smooth transitions between news stories and a visually appealing experience for viewers.
+---
 
-## Setup
+## Table of Contents
 
-1. **Clone the repository**:
+1. [Getting Started](#getting-started)
+2. [Setting up with Docker](#docker-setup)
+3. [Setting up with Virtual Environment](#virtual-environment-setup)
+4. [Running the Application](#running-the-application)
+5. [Directory Structure](#directory-structure)
+6. [Contributing](#contributing)
+
+---
+
+## Getting Started
+
+StreamPulse can be run using Docker or a Python virtual environment. Choose one of the following methods depending on your environment.
+
+### Prerequisites
+
+- **Python 3.7+** (if not using Docker)
+- **Docker** (if running in a container)
+- **Ollama**: Ensure the Ollama instance is running locally on `http://localhost:11434`. For more information, visit [Ollama's official site](https://ollama.com/).
+
+---
+
+## Docker Setup
+
+Running StreamPulse in a Docker container is the simplest way to get started. Docker will ensure all dependencies are automatically installed.
+
+### Steps to Set Up:
+
+1. **Build the Docker Image**:
+   Open a terminal in the project root directory and run:
    ```bash
-   git clone https://github.com/ProhibitedTV/StreamPulse.git
-   cd StreamPulse
+   docker build -t stream-pulse .
    ```
 
-2. **Create a virtual environment**:
+2. **Run the Docker Container**:
+   After building the image, start the container with:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # For Windows, use 'venv\Scripts\activate'
+   docker run -it stream-pulse
    ```
 
-3. **Install dependencies**:
+Docker will automatically set up the environment, install dependencies, and start the application.
+
+---
+
+## Virtual Environment Setup
+
+If you prefer to use a Python virtual environment, follow the instructions below.
+
+### Linux/Mac Setup
+
+1. **Run the Setup Script**:
+   Open a terminal in the project root and execute:
    ```bash
-   pip install -r requirements.txt
+   ./setup.sh
    ```
 
-4. **Configure the Alpha Vantage API Key**:
-   - Create a `.env` file in the root directory and add your Alpha Vantage API key:
-     ```bash
-     ALPHA_VANTAGE_API_KEY=your_api_key_here
-     ```
+2. **Activate the Environment**:
+   The script will set up a Python virtual environment and install dependencies. Afterward, the application will automatically run.
+
+### Windows Setup
+
+1. **Run the Setup Script**:
+   In a command prompt or PowerShell window, run:
+   ```cmd
+   setup.bat
+   ```
+
+2. **Activate the Environment**:
+   The script will create the virtual environment, install the dependencies, and start the application.
+
+---
 
 ## Running the Application
 
-To run the application:
-```bash
-python main.py
+Once the environment is set up using Docker or virtualenv, the application will start automatically. You can modify the RSS feeds and other settings in the `src/ui` directory.
+
+For example, the application fetches data from multiple RSS sources and displays them in real-time using `tkinter`.
+
+---
+
+## Directory Structure
+
+Here is an overview of the project directory structure:
+
+```
+StreamPulse/
+├── Dockerfile                  # Docker configuration
+├── setup.sh                    # Linux/Mac setup script
+├── setup.bat                   # Windows setup script
+├── requirements.txt            # Python dependencies
+├── src/                        # Source code
+│   ├── api/                    # API-related scripts (sentiment analysis, etc.)
+│   ├── ui/                     # UI-related scripts
+│   ├── main.py                 # Main entry point for the application
+│   └── tests/                  # Unit tests
+└── README.md                   # Project documentation
 ```
 
-## Stock Ticker Customization
+---
 
-The stock ticker scrolls smoothly across the bottom of the screen, and its speed can be adjusted by modifying the `scroll_ticker` function in `stock_ticker.py`. You can also add or remove stock symbols by modifying the `STOCKS` list in `stock_ticker.py`.
+## Contributing
 
-## Adding Feeds
+Contributions are welcome! Feel free to submit issues, feature requests, or pull requests. Before contributing, ensure all changes are tested using `unittest`.
 
-You can manage the RSS feeds in the `feeds.py` file. Simply add or remove feeds by modifying the appropriate category lists.
+---
 
-## License
+### License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See the `LICENSE` file for more details.
