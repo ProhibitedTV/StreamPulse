@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import ttkbootstrap as ttkb
-from fetchers import fetch_rss_feed, fetch_image, sanitize_html
+from api.fetchers import fetch_rss_feed, fetch_image, sanitize_html
 from PIL import Image, ImageTk
 import time
 from datetime import datetime

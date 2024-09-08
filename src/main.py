@@ -3,10 +3,10 @@ import tkinter as tk
 from tkinter import ttk
 import ttkbootstrap as ttkb
 from PIL import Image, ImageTk
-from gui import update_feed
-from feeds import GENERAL_RSS_FEEDS, FINANCIAL_RSS_FEEDS, VIDEO_GAMES_RSS_FEEDS, SCIENCE_TECH_RSS_FEEDS, HEALTH_ENVIRONMENT_RSS_FEEDS, ENTERTAINMENT_RSS_FEEDS
-from stock_ticker import create_stock_ticker_frame
-from stats_widgets import add_global_stats, add_world_clock
+from ui.gui import update_feed
+from ui.feeds import GENERAL_RSS_FEEDS, FINANCIAL_RSS_FEEDS, VIDEO_GAMES_RSS_FEEDS, SCIENCE_TECH_RSS_FEEDS, HEALTH_ENVIRONMENT_RSS_FEEDS, ENTERTAINMENT_RSS_FEEDS
+from ui.stock_ticker import create_stock_ticker_frame
+from ui.stats_widgets import add_global_stats, add_world_clock
 
 # Get the absolute path of the project root directory
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
