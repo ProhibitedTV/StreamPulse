@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import pandas as pd
-from api.stock_ticker import fetch_stock_price, fetch_from_yahoo_finance
+from src.api.stock_ticker import fetch_stock_price, fetch_from_yahoo_finance
 
 class TestStockTicker(unittest.TestCase):
     """
