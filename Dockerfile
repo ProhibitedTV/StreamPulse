@@ -1,20 +1,39 @@
-# Use the official Python image from the Docker Hub
-FROM python:3.9-slim
+# Stage 1: Build stage
+FROM python:3.9-slim AS build
 
-# Set the working directory in the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the requirements.txt file into the container
-COPY requirements.txt .
+# Install dependencies for building (if any required)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install any needed packages specified in requirements.txt
+# Install dependencies early to utilize Docker layer caching
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire project folder into the container at /app
-COPY . /app
+# Stage 2: Final stage (runtime environment)
+FROM python:3.9-slim
 
-# Expose port (if required)
+# Set the working directory
+WORKDIR /app
+
+# Copy the installed packages from the build stage
+COPY --from=build /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
+
+# Copy the application code
+COPY . .
+
+# Create a non-root user
+RUN useradd -m myuser && chown -R myuser /app
+USER myuser
+
+# Expose the application port (use environment variable for flexibility)
 EXPOSE 8000
+
+# Default environment variable for the port (can be overridden at runtime)
+ENV PORT=8000
 
 # Run the application
 CMD ["python", "src/main.py"]
