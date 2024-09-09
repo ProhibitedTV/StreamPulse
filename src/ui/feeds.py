@@ -1,5 +1,6 @@
 import logging
 import time
+from utils.threading import run_in_thread
 
 # Logger for error tracking
 logging.basicConfig(level=logging.INFO)
@@ -91,22 +92,34 @@ def get_feeds_by_category(category):
         logging.error(f"Invalid feed category '{category}'. Valid categories are: {valid_categories}")
         return []
 
+def load_feeds_in_thread(feed, update_progress, total_feeds, loaded_feeds):
+    """
+    Loads a single feed in a separate thread, simulating network delay, and updates the progress.
+
+    Args:
+        feed (str): The RSS feed URL to be loaded.
+        update_progress (function): Function to update the progress bar.
+        total_feeds (int): The total number of feeds to be loaded.
+        loaded_feeds (list): A shared list to keep track of the number of loaded feeds.
+    """
+    time.sleep(0.5)  # Simulate network delay
+    loaded_feeds[0] += 1
+    progress = (loaded_feeds[0] / total_feeds) * 100
+    update_progress(progress)  # Update progress bar
+    logging.info(f"Loaded feed: {feed}")
+
 def load_feeds(main_frame, update_progress):
     """
-    Simulates loading feeds from different categories and updates the progress bar accordingly.
-
+    Loads all feeds concurrently using threads and updates the progress bar accordingly.
+    
     Args:
         main_frame (ttkb.Frame): The main frame where the feed content will be displayed.
         update_progress (function): Function to update the loading progress.
     """
     total_feeds = sum(len(feeds) for feeds in RSS_FEEDS.values())
-    loaded_feeds = 0
+    loaded_feeds = [0]  # Use a list to store the count of loaded feeds, so it can be updated by threads
 
     for category, feeds in RSS_FEEDS.items():
         for feed in feeds:
-            time.sleep(0.5)  # Simulate network delay for each feed
-            loaded_feeds += 1
-            progress = (loaded_feeds / total_feeds) * 100
-            update_progress(progress)  # Update progress bar
-
-            logging.info(f"Loaded feed: {feed}")
+            # Start loading each feed in a separate thread
+            run_in_thread(load_feeds_in_thread, feed, update_progress, total_feeds, loaded_feeds)
