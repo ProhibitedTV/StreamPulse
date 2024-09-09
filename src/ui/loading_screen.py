@@ -1,8 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 from ui.feeds import load_feeds
-from api.fetchers import fetch_stock_price, STOCKS  # Import stock fetching functions
-import threading
+from api.fetchers import fetch_stock_price, STOCKS
+from utils.threading import run_in_thread
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -96,5 +96,6 @@ def show_loading_screen(root, on_complete):
             root.after(0, loading_screen.destroy)
             root.after(0, on_complete)
 
-    # Start loading data in a separate thread to avoid blocking the UI
-    threading.Thread(target=load_data_and_close, daemon=True).start()
+    # Start loading data using the utility function to avoid blocking the UI
+    run_in_thread(load_data_and_close)
+
