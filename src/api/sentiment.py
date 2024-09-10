@@ -7,18 +7,42 @@ logging.basicConfig(level=logging.INFO)
 def list_models():
     """
     Fetches and returns a list of available models from the local Ollama instance.
-
+    
+    If Ollama is not installed or running, or if there is a network or connection error, 
+    it handles the error gracefully and returns 'error' along with notifying the user.
+    
     :return: A list of model names or 'error' if an issue occurs.
     """
     url = "http://localhost:11434/api/tags"
+    
     try:
+        # Attempt to connect to the Ollama instance
         response = requests.get(url)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise error for non-2xx responses
+        
+        # Parse available models from the response
         models = [model['name'] for model in response.json().get('models', [])]
         logging.info(f"Available models: {models}")
         return models
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching models from Ollama: {e}")
+
+    except requests.ConnectionError:
+        # Handle case where Ollama isn't installed or running
+        error_message = "Ollama server not found. Please ensure Ollama is installed and running on localhost:11434."
+        logging.error(error_message)
+        add_to_tts_queue(error_message)
+        return "error"
+
+    except requests.Timeout:
+        # Handle timeout errors (e.g., if Ollama takes too long to respond)
+        error_message = "Ollama server is not responding. Please check your network or server status."
+        logging.error(error_message)
+        add_to_tts_queue(error_message)
+        return "error"
+
+    except requests.RequestException as e:
+        # Catch-all for any other request-related errors
+        error_message = f"Unexpected error while fetching models from Ollama: {e}"
+        logging.error(error_message)
         add_to_tts_queue("Error fetching models from Ollama.")
         return "error"
 
