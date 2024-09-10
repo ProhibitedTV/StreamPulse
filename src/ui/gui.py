@@ -1,156 +1,170 @@
-# Standard library imports
 import os
 import logging
-import queue
-import tkinter as tk
-from tkinter import ttk
+from PyQt5.QtWidgets import QVBoxLayout, QLabel, QFrame, QGridLayout, QWidget, QGraphicsDropShadowEffect
+from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtCore import Qt
 
-# Third-party library imports
-import ttkbootstrap as ttkb
-from PIL import Image, ImageTk
-
-# Internal application imports
-from api.fetchers import fetch_rss_feed, fetch_image, sanitize_html
-from api.sentiment import analyze_text
-from api.tts_engine import tts_queue
-from ui.stats_widgets import add_global_stats, add_world_clock
+from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
+from ui.stock_ticker import create_stock_ticker_widget
 from ui.feed_manager import update_feed
-from ui.stock_ticker import create_stock_ticker_frame
-from ui.feeds import get_feeds_by_category
-from utils.threading import run_with_callback, run_with_exception_handling
-
-# Update interval for feed refresh (10 seconds)
-UPDATE_INTERVAL = 10000
-
-# Global queue for feed entries
-feed_queue = queue.Queue()
-
-def add_category_label(parent_frame, category_name):
-    """
-    Adds a category label to the news feed display.
-    """
-    logging.debug(f"Adding category label: {category_name}")
-    label = ttkb.Label(parent_frame, text=category_name, font=("Helvetica", 20, "bold"), bootstyle="primary")
-    label.pack(pady=10)
 
 def setup_main_frame(root):
     """
-    Set up the main application frame within the root Tkinter window.
-    This includes sections for general news, financial news, video games, science & tech, and other categories.
+    Sets up the main GUI layout for the StreamPulse application.
 
     Args:
-        root: The root Tkinter window.
-
-    Returns:
-        ttkb.Frame: The main frame of the application with news sections, a stock ticker, global stats, and a world clock.
+        root (QWidget): The main window or parent widget for the application.
     """
     logging.debug("Setting up main frame...")
 
-    # Get the absolute path of the project root directory (StreamPulse)
+    # Get the absolute path of the project root directory
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     bg_image_path = os.path.join(project_root, 'images', 'bg.png')
 
-    # Load the background image if available
+    central_widget = QWidget(root)
+    root.setCentralWidget(central_widget)
+    layout = QGridLayout(central_widget)
+    layout.setSpacing(20)  # Increased spacing for better visuals
+    logging.debug("Grid layout for central widget created.")
+
+    # Load and set the background image if available
+    load_background_image(central_widget, layout, bg_image_path)
+
+    # Create the news sections
+    logging.info("Creating news sections.")
+    create_news_sections(layout, root)
+
+    # Add global stats and world clock widgets
+    logging.info("Adding global stats and world clock widgets.")
+    add_stats_and_clock_widgets(layout, central_widget)
+
+    # Create and add the stock ticker frame at the bottom
+    logging.debug("Creating stock ticker frame.")
+    stock_ticker_frame = create_stock_ticker_widget()
+    layout.addWidget(stock_ticker_frame, 4, 0, 1, 4)
+    logging.info("Stock ticker frame created.")
+
+    logging.debug("Main frame setup complete.")
+    return central_widget
+
+def load_background_image(central_widget, layout, bg_image_path):
+    """
+    Loads the background image for the main frame. If not found, sets a default background color.
+
+    Args:
+        central_widget (QWidget): The main widget where the background is set.
+        layout (QGridLayout): The layout where the background is added.
+        bg_image_path (str): The file path to the background image.
+    """
     if os.path.exists(bg_image_path):
         try:
-            bg_image = Image.open(bg_image_path)
-            bg_image = bg_image.resize((1920, 1080), Image.Resampling.LANCZOS)
-            bg_photo = ImageTk.PhotoImage(bg_image)
+            logging.debug(f"Loading background image from {bg_image_path}")
+            bg_image = QPixmap(bg_image_path)
+            bg_label = QLabel(central_widget)
+            bg_label.setPixmap(bg_image)
+            bg_label.setScaledContents(True)
+            bg_label.setStyleSheet("opacity: 0.85;")  # Increased transparency for visibility of content
+            layout.addWidget(bg_label, 0, 0, 5, 4)  # Adjusted grid span for full-screen background
             logging.info("Background image loaded successfully.")
         except Exception as e:
             logging.error(f"Error loading background image: {e}")
-            root.configure(bg="black")  # Fallback color if image fails
-            return
+            central_widget.setStyleSheet("background-color: #2c3e50;")  # Dark fallback color
     else:
         logging.error(f"Background image not found at path: {bg_image_path}")
-        root.configure(bg="black")  # Fallback color if image is missing
-        return
+        central_widget.setStyleSheet("background-color: #2c3e50;")
 
-    # Create a Canvas to hold the background
-    canvas = ttkb.Canvas(root, width=1920, height=1080)
-    canvas.pack(fill="both", expand=True)
-    canvas.create_image(0, 0, image=bg_photo, anchor="nw")
-    logging.debug("Canvas with background image created.")
+def apply_shadow_effect(widget):
+    """
+    Applies a subtle shadow effect to a widget for a modern, floating appearance.
+    
+    Args:
+        widget (QWidget): The widget to apply the shadow to.
+    """
+    shadow = QGraphicsDropShadowEffect()
+    shadow.setBlurRadius(20)
+    shadow.setXOffset(5)
+    shadow.setYOffset(5)
+    shadow.setColor(QColor(0, 0, 0, 160))
+    widget.setGraphicsEffect(shadow)
 
-    # Set a scroll region to prevent content from overflowing
-    canvas.config(scrollregion=canvas.bbox("all"))
+def create_news_sections(layout, root):
+    """
+    Dynamically creates news sections for different categories and adds them to the layout.
 
-    # Create the main frame to hold content above the background
-    main_frame = ttkb.Frame(canvas)
-    canvas.create_window(0, 0, window=main_frame, anchor="nw")
-    logging.debug("Main frame created and added to canvas.")
+    Args:
+        layout (QGridLayout): The layout to which the sections are added.
+        root (QWidget): The parent widget for the sections.
+    """
+    logging.debug("Creating news sections.")
+    
+    categories = [
+        ("General", "general"),
+        ("Financial", "financial"),
+        ("Video Games", "video_games"),
+        ("Science & Tech", "science_tech"),
+        ("Health & Environment", "health_environment"),
+        ("Entertainment", "entertainment"),
+    ]
 
-    # Set the weight of the grid for proper layout
-    logging.debug("Configuring grid layout for main frame.")
-    for i in range(4):
-        main_frame.grid_columnconfigure(i, weight=1, uniform="col")
-        logging.debug(f"Configured column {i} with weight 1 and uniform 'col'.")
-    for i in range(3):
-        main_frame.grid_rowconfigure(i, weight=1, uniform="row")
-        logging.debug(f"Configured row {i} with weight 1 and uniform 'row'.")
+    for i, (category_name, internal_category) in enumerate(categories):
+        logging.debug(f"Setting up section for {category_name}.")
+        section_frame = QFrame(root)
+        section_frame.setStyleSheet("""
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            color: white;
+        """)
+        apply_shadow_effect(section_frame)  # Add shadow effect for modern card look
 
-    # Helper to set up each news section
-    def create_news_section(row, col, category_name, internal_category):
-        logging.debug(f"Setting up {category_name} section at row {row}, column {col}.")
-        
-        # Create a frame to hold both the category label and the content
-        section_frame = ttkb.Frame(main_frame, width=450, height=400)
-        section_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-        section_frame.grid_propagate(False)
-        logging.info(f"{category_name} section created with fixed size at row {row}, column {col}.")
+        layout.addWidget(section_frame, i // 3, i % 3, 1, 1)
 
-        # Add the category label
-        label = ttkb.Label(section_frame, text=f"{category_name} News", font=("Helvetica", 18, "bold"), bootstyle="primary")
-        label.pack(pady=5)
-        logging.debug(f"{category_name} label added to the section.")
+        label = QLabel(f"{category_name} News", section_frame)
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: #ecf0f1;
+            padding-bottom: 10px;
+            background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #3498db, stop: 1 #2ecc71);
+            border-radius: 5px;
+        """)
 
-        # Frame for the content (story cards) and sentiment analysis
-        content_frame = ttkb.Frame(section_frame, width=450, height=300)
-        content_frame.pack(fill="both", expand=True)
-        content_frame.grid_propagate(False)
-        logging.debug(f"Content frame created for {category_name} section.")
+        content_layout = QVBoxLayout(section_frame)
+        content_layout.addWidget(label)
 
-        sentiment_frame = ttkb.Frame(section_frame, width=450, height=100)
-        sentiment_frame.pack(fill="both", expand=True)
-        sentiment_frame.grid_propagate(False)
-        logging.debug(f"Sentiment frame created for {category_name} section.")
+        content_frame = QWidget(section_frame)
+        content_layout.addWidget(content_frame)
 
-        # Trigger feed update using threading to prevent blocking, 
-        # use run_with_callback to process feed updates and then display in the UI
+        sentiment_frame = QWidget(section_frame)
+        content_layout.addWidget(sentiment_frame)
+
         logging.info(f"Starting feed update for {category_name}.")
-        run_with_callback(
-            get_feeds_by_category,  # Target function
-            lambda feeds: update_feed(feeds, content_frame, root, f"{category_name} News", sentiment_frame),  # Callback function
-            internal_category  # Pass as a positional argument, not keyword
-        )
+        update_feed([], content_frame, root, f"{category_name} News", sentiment_frame)
+        logging.debug(f"Finished setup for {category_name} section.")
 
-    # Adding sections for different categories of news
-    logging.debug("Adding news sections.")
-    create_news_section(0, 0, "General", "general")
-    create_news_section(0, 1, "Financial", "financial")
-    create_news_section(0, 2, "Video Games", "video_games")
-    create_news_section(1, 0, "Science & Tech", "science_tech")
-    create_news_section(1, 1, "Health & Environment", "health_environment")
-    create_news_section(1, 2, "Entertainment", "entertainment")
+def add_stats_and_clock_widgets(layout, central_widget):
+    """
+    Adds the global statistics and world clock widgets to the layout.
 
-    # Right column for global stats and world clock
-    logging.debug("Setting up stats and clock frame.")
-    stats_clock_frame = ttkb.Frame(main_frame)
-    stats_clock_frame.grid(row=0, column=3, rowspan=2, padx=10, pady=5, sticky="nsew")
-    stats_clock_frame.grid_columnconfigure(0, weight=1)
-    logging.debug("Stats and clock frame created and added to grid.")
+    Args:
+        layout (QGridLayout): The layout to which the widgets are added.
+        central_widget (QWidget): The parent widget where the widgets are placed.
+    """
+    stats_clock_frame = QFrame(central_widget)
+    stats_clock_frame.setStyleSheet("""
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 15px;
+        margin-top: 10px;
+    """)
+    apply_shadow_effect(stats_clock_frame)  # Apply shadow to stats/clock frame
 
-    # Add Global Stats and World Clock widgets
-    logging.info("Adding global stats and world clock widgets.")
-    add_global_stats(stats_clock_frame)
-    add_world_clock(stats_clock_frame)
+    stats_clock_layout = QVBoxLayout(stats_clock_frame)
+    layout.addWidget(stats_clock_frame, 0, 3, 2, 1)  # Placed in the right corner for balance
 
-    # Create Stock Ticker at the bottom
-    logging.debug("Creating stock ticker frame.")
-    stock_ticker_frame = ttkb.Frame(canvas, padding=10, bootstyle="info")
-    canvas.create_window(960, 1050, window=stock_ticker_frame, anchor="center")
-    create_stock_ticker_frame(stock_ticker_frame)
-    logging.debug("Stock ticker frame created.")
+    # Add global stats and world clock widgets
+    stats_clock_layout.addWidget(create_global_stats_widget())
+    stats_clock_layout.addWidget(create_world_clock_widget())
 
-    logging.debug("Main frame setup complete.")
-    return main_frame
+    logging.debug("Global stats and world clock widgets added.")

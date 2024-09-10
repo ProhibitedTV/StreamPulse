@@ -42,6 +42,7 @@ def process_tts_queue():
             tts_queue.task_done()
         except Exception as e:
             logging.error(f"Error processing TTS request: {e}")
+            tts_queue.task_done()
 
 def add_to_tts_queue(text):
     """
@@ -78,5 +79,12 @@ def stop_tts_thread():
     logging.info("Stopping TTS processing thread.")
     tts_queue.put(None)  # Sending a termination signal to the thread
 
-# Start the TTS processing thread
+# Start the TTS processing thread when the module is loaded
 start_tts_thread()
+
+def shutdown_tts():
+    """
+    Shuts down the TTS engine and stops the TTS thread when the application exits.
+    """
+    logging.info("Shutting down TTS engine.")
+    stop_tts_thread()

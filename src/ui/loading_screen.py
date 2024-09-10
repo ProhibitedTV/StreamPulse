@@ -1,101 +1,166 @@
-import tkinter as tk
-from tkinter import ttk
+import os
+import logging
+from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation
+from PyQt5.QtGui import QPixmap, QColor
 from ui.feeds import load_feeds
 from api.fetchers import fetch_stock_price, STOCKS
-from utils.threading import run_in_thread
-import logging
 
 logging.basicConfig(level=logging.INFO)
 
-def show_loading_screen(root, on_complete):
-    """
-    Displays a full-screen loading screen with a progress bar and real-time status updates
-    while news feeds and stock data are being loaded. Once loading is complete, the main
-    application window is shown.
-    
-    Args:
-        root (tk.Tk): The main application window.
-        on_complete (function): Function to call once loading is complete.
-    """
-    # Create the loading screen as a separate window
-    loading_screen = tk.Toplevel(root)
-    loading_screen.attributes("-fullscreen", True)  # Set to full-screen
-    loading_screen.title("Loading Data...")
+class LoadingScreen(QMainWindow):
+    progress_signal = pyqtSignal(float, str)
 
-    # Add a label to display the loading message
-    loading_label = ttk.Label(loading_screen, text="Loading data, please wait...", font=("Helvetica", 20))
-    loading_label.pack(pady=30)
+    def __init__(self, on_complete):
+        super().__init__()
+        self.on_complete = on_complete
+        self.setWindowTitle("Loading Data...")
+        self.showFullScreen()
 
-    # Label to display real-time status updates
-    status_label = ttk.Label(loading_screen, text="", font=("Helvetica", 16))
-    status_label.pack(pady=10)
+        # Set gradient background
+        self.setStyleSheet("""
+            background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #34495e, stop: 1 #2c3e50);
+        """)
 
-    # Create a progress bar to indicate the loading progress
-    progress_var = tk.DoubleVar()
-    progress_bar = ttk.Progressbar(loading_screen, variable=progress_var, maximum=100, length=600)
-    progress_bar.pack(pady=30)
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
+        layout = QVBoxLayout(self.central_widget)
 
-    def update_progress(progress, message=""):
-        """
-        Updates the progress bar and status message based on the loading progress.
-        
-        Args:
-            progress (float): The current progress as a percentage (0 to 100).
-            message (str): A status message to display.
-        """
-        if loading_screen.winfo_exists():  # Ensure loading screen still exists
-            capped_progress = min(progress, 100)  # Cap progress at 100%
-            logging.info(f"Progress: {progress}% - Message: {message}")
-            root.after(0, lambda: progress_var.set(capped_progress))
-            root.after(0, lambda: status_label.config(text=message))
-            loading_screen.update_idletasks()
+        # Loading icon (spinner)
+        self.loading_spinner = QLabel(self)
+        self.loading_spinner.setAlignment(Qt.AlignCenter)
+        spinner_pixmap = QPixmap(os.path.join('images', 'spinner.png'))  # Placeholder for spinner image
+        self.loading_spinner.setPixmap(spinner_pixmap)
+        layout.addWidget(self.loading_spinner)
 
-    def load_stock_data(update_progress):
-        """
-        Loads stock data and updates the progress bar during the process.
-        
-        Args:
-            update_progress (function): Function to update the progress.
-        """
+        # Animate spinner (rotation)
+        self.spinner_animation = QPropertyAnimation(self.loading_spinner, b"rotation")
+        self.spinner_animation.setDuration(2000)
+        self.spinner_animation.setStartValue(0)
+        self.spinner_animation.setEndValue(360)
+        self.spinner_animation.setLoopCount(-1)
+        self.spinner_animation.start()
+
+        # Loading label
+        self.loading_label = QLabel("Loading data, please wait...", self)
+        self.loading_label.setAlignment(Qt.AlignCenter)
+        self.loading_label.setStyleSheet("""
+            font-size: 24px;
+            color: #ecf0f1;
+            padding: 20px;
+        """)
+        layout.addWidget(self.loading_label)
+
+        # Status label
+        self.status_label = QLabel("", self)
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet("""
+            font-size: 18px;
+            color: #bdc3c7;
+            padding-bottom: 20px;
+        """)
+        layout.addWidget(self.status_label)
+
+        # Animated progress bar
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #3498db;
+                border-radius: 10px;
+                text-align: center;
+                color: white;
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+            QProgressBar::chunk {
+                background-color: #3498db;
+                width: 20px;
+            }
+        """)
+        layout.addWidget(self.progress_bar)
+
+        # Opacity effect for smooth visual transitions
+        self.opacity_effect = QGraphicsOpacityEffect(self.central_widget)
+        self.central_widget.setGraphicsEffect(self.opacity_effect)
+        self.fade_in_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_in_animation.setDuration(1000)
+        self.fade_in_animation.setStartValue(0)
+        self.fade_in_animation.setEndValue(1)
+        self.fade_in_animation.start()
+
+        self.progress_signal.connect(self.update_progress)
+        self.worker = DataLoadingWorker(self.progress_signal)
+
+        self.start_loading_data()
+
+    def update_progress(self, progress, message=""):
+        capped_progress = min(progress, 100)
+        logging.info(f"Progress: {capped_progress}% - Message: {message}")
+        self.progress_bar.setValue(capped_progress)
+        self.status_label.setText(message)
+
+        if capped_progress == 100:
+            logging.info("Data loading complete, closing loading screen.")
+            self.worker.quit()
+            self.worker.wait()  # Ensure the worker has stopped
+            self.fade_out_and_close()  # Smoothly transition out of the loading screen
+
+    def start_loading_data(self):
+        logging.info("Starting data loading process.")
+        self.worker.start()
+
+    def fade_out_and_close(self):
+        """Smooth fade-out animation before closing the loading screen."""
+        self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_out_animation.setDuration(1000)
+        self.fade_out_animation.setStartValue(1)
+        self.fade_out_animation.setEndValue(0)
+        self.fade_out_animation.finished.connect(self.close_loading_screen)
+        self.fade_out_animation.start()
+
+    def close_loading_screen(self):
+        self.close()  # Close the loading screen
+        self.on_complete()  # Load the main application window
+
+    def closeEvent(self, event):
+        logging.info("Closing loading screen and stopping worker.")
+        if self.worker.isRunning():
+            self.worker.quit()
+            self.worker.wait()
+        event.accept()
+
+
+class DataLoadingWorker(QThread):
+    def __init__(self, progress_signal):
+        super().__init__()
+        self.progress_signal = progress_signal
+
+    def run(self):
+        try:
+            self.load_data_and_close()
+        except Exception as e:
+            logging.error(f"Error during data loading: {e}")
+
+    def load_stock_data(self):
         total_stocks = len(STOCKS)
         for index, symbol in enumerate(STOCKS):
-            # Fetch stock price for the symbol
-            fetch_stock_price(symbol)
-            # Update progress and show real-time status for each stock symbol
-            progress = (index + 1) / total_stocks * 50  # Stocks account for the remaining 50% of progress
-            logging.info(f"Stock loading progress: {50 + progress}% for {symbol}")
-            update_progress(50 + progress, f"Fetching stock price for {symbol}...")
+            try:
+                fetch_stock_price(symbol)
+                progress = (index + 1) / total_stocks * 50
+                logging.info(f"Stock loading progress: {50 + progress}% for {symbol}")
+                self.progress_signal.emit(50 + progress, f"Fetching stock price for {symbol}...")
+            except Exception as e:
+                logging.error(f"Error fetching stock data for {symbol}: {e}")
+                self.progress_signal.emit(50 + (index + 1) / total_stocks * 50, f"Failed to fetch stock data for {symbol}...")
 
-    def load_data_and_close():
-        """
-        Loads the feeds and stock data, updates the progress bar during loading, 
-        and closes the loading screen once all data is fully loaded.
-        """
-        # Load feeds (accounts for 50% of the progress)
-        update_progress(0, "Loading news feeds...")
-        
+    def load_data_and_close(self):
+        self.progress_signal.emit(0, "Loading news feeds...")
+
         def feed_progress_update(current_feed_index, total_feeds):
-            """
-            Update the progress based on the current feed being processed.
-            
-            Args:
-                current_feed_index (int): Index of the current feed being processed.
-                total_feeds (int): Total number of feeds to load.
-            """
-            progress = min(((current_feed_index + 1) / total_feeds) * 50, 50)  # Cap feed progress at 50%
+            progress = min(((current_feed_index + 1) / total_feeds) * 50, 50)
             logging.info(f"Feed loading progress: {progress}% (Feed {current_feed_index + 1}/{total_feeds})")
-            update_progress(progress, f"Loading feeds... {int(progress)}%")
-        
-        load_feeds(root, lambda current_feed_index: feed_progress_update(current_feed_index, total_feeds=50))
+            self.progress_signal.emit(progress, f"Loading feeds... {int(progress)}%")
 
-        # Load stock data (accounts for the remaining 50% of the progress)
-        load_stock_data(lambda p, msg="": update_progress(p, msg))
-
-        # Once done, close the loading screen and show the main window
-        if loading_screen.winfo_exists():  # Ensure the loading screen still exists
-            root.after(0, loading_screen.destroy)
-            root.after(0, on_complete)
-
-    # Start loading data using the utility function to avoid blocking the UI
-    run_in_thread(load_data_and_close)
-
+        load_feeds(None, lambda current_feed_index: feed_progress_update(current_feed_index, total_feeds=50))
+        self.load_stock_data()
+        self.progress_signal.emit(100, "Loading complete")

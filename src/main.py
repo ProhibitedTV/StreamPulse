@@ -1,73 +1,62 @@
-import os
-import tkinter as tk
+import sys
 import logging
-import ttkbootstrap as ttkb
-from ui.loading_screen import show_loading_screen
+from PyQt5.QtWidgets import QApplication, QMainWindow
+from ui.loading_screen import LoadingScreen  # Import the LoadingScreen class
 from ui.gui import setup_main_frame
-from utils.threading import run_with_callback, run_with_exception_handling
+from utils.threading import run_with_callback, shutdown_executor
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting StreamPulse application...")
 
-# GUI setup
-root = ttkb.Window(themename="darkly")
-root.title("StreamPulse - Dynamic News Display")
-root.attributes("-fullscreen", True)
+class StreamPulseApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("StreamPulse - Dynamic News Display")
+        self.showFullScreen()
 
-def start_application():
-    """
-    Initialize the main application window once the news feeds have finished loading.
+        # Call loading screen logic
+        self.load_with_loading_screen()
 
-    This function is called after the loading process is complete and:
-    - Sets up the main frame of the application, where the news feeds and other
-      components will be displayed.
-    - Deiconifies (shows) the main window, which was hidden during the loading process.
-    """
-    logging.info("News feeds loaded, starting the main application.")
-    setup_main_frame(root)
-    root.deiconify()
+        # Set close event handling
+        self.closeEvent = self.on_close
 
-def load_with_loading_screen():
-    """
-    Display a loading screen while asynchronously fetching the news feeds.
+    def start_application(self):
+        """
+        Initialize the main application window once the news feeds have finished loading.
+        This function sets up the main frame of the application.
+        """
+        logging.info("News feeds loaded, starting the main application.")
+        setup_main_frame(self)  # Setup main UI components after loading is complete
 
-    This function hides the main application window and then shows a full-screen loading 
-    screen. It also triggers the background process of loading news feeds, and once the 
-    loading is complete, it transitions to the main application window.
-    """
-    logging.info("Displaying loading screen and starting feed loading process.")
+    def load_with_loading_screen(self):
+        """
+        Display a loading screen while asynchronously fetching the news feeds.
+        """
+        logging.info("Displaying loading screen and starting feed loading process.")
+        try:
+            # Show loading screen and start loading feeds in the background
+            self.loading_screen = LoadingScreen(self.start_application)
+            self.loading_screen.show()
+        except Exception as e:
+            logging.error(f"Error occurred during loading process: {e}")
 
-    try:
-        # Hide the root window during the loading process
-        root.withdraw()
+    def on_close(self, event):
+        """Cleanup function to ensure proper shutdown of background threads."""
+        logging.info("Closing application.")
 
-        # Show loading screen and start loading feeds in the background
-        show_loading_screen(root, start_application)
-    except Exception as e:
-        logging.error(f"Error occurred during loading process: {e}")
+        # Shut down the thread pool executor to stop background threads
+        logging.info("Shutting down thread pool executor.")
+        shutdown_executor()  # Ensure threads are stopped
 
-def on_close():
-    """Cleanup function to ensure proper shutdown of background threads."""
-    logging.info("Closing application.")
-    root.destroy()
+        # Close the application
+        event.accept()
 
-# Handle proper exit on window close
-root.protocol("WM_DELETE_WINDOW", on_close)
+# Main entry point for the application
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = StreamPulseApp()
 
-# Start the feed loading process in a background thread, and automatically
-# call `start_application` after loading completes
-logging.info("Starting the news feed loading in a background thread.")
-run_with_callback(load_with_loading_screen, lambda _: start_application())
-
-# Bind the 'Escape' key to exit full-screen mode
-root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
-logging.info("Bound 'Escape' key to exit full-screen mode.")
-
-# Bind 'Ctrl+Q' to close the application
-root.bind("<Control-q>", lambda e: on_close())
-logging.info("Bound 'Ctrl+Q' key to close the application.")
-
-# Start the Tkinter main loop to keep the UI running
-logging.info("Starting Tkinter main loop.")
-root.mainloop()
+    # Execute the PyQt application event loop
+    logging.info("Starting PyQt main loop.")
+    sys.exit(app.exec_())

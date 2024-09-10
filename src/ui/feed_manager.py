@@ -1,18 +1,15 @@
 # Standard Library Imports
 import logging
 import queue
-import tkinter as tk
-from tkinter import ttk
 
 # Third-party Library Imports
-from PIL import Image, ImageTk
+from PyQt5.QtCore import QTimer
 
 # Internal Project Imports
-from api.fetchers import fetch_rss_feed, fetch_image, sanitize_html
+from api.fetchers import fetch_rss_feed, sanitize_html
 from api.sentiment import analyze_text
-from api.tts_engine import tts_queue
-from utils.threading import run_in_thread
 from ui.story_display import fade_in_story, clear_and_display_story
+from utils.threading import run_in_thread
 
 # Constants
 UPDATE_INTERVAL = 10000  # 10 seconds
@@ -25,10 +22,10 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
 
     Args:
         rss_feeds (list): A list of RSS feed URLs to fetch data from.
-        content_frame (tk.Widget): The frame in the GUI where the feed content will be displayed.
-        root (tk.Tk): The root Tkinter window.
+        content_frame (QWidget): The frame in the GUI where the feed content will be displayed.
+        root (QWidget): The root PyQt5 main window or parent widget.
         category_name (str): The category name of the feed (e.g., 'General News').
-        sentiment_frame (tk.Widget): A frame for displaying sentiment analysis results.
+        sentiment_frame (QWidget): A frame for displaying sentiment analysis results.
     """
     feed_entries = []
 
@@ -52,7 +49,7 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
 
         if not feed_entries:
             logging.warning(f"No entries retrieved for category: {category_name}")
-            root.after(0, lambda: display_placeholder_message(content_frame, "No stories available"))
+            display_placeholder_message(content_frame, "No stories available")
         else:
             logging.info(f"Total entries fetched for {category_name}: {len(feed_entries)}")
             logging.debug(f"Adding {len(feed_entries)} entries to the queue for category: {category_name}")
@@ -64,43 +61,58 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
             category, entries = feed_queue.get_nowait()
             if category == category_name and entries:
                 story = entries.pop(0)
-                logging.debug(f"Displaying story: {story.title} for category: {category_name}")
-                # Perform sentiment analysis on the story's description
-                description = sanitize_html(story.description)
-                sentiment = analyze_text(description, root, sentiment_frame, model="llama3:latest")
-                root.after(0, lambda: fade_in_story(content_frame, story, sentiment_frame, sentiment))
+                
+                # Safely handle missing attributes for 'description' and 'title'
+                description = sanitize_html(getattr(story, 'description', 'No description available'))
+                title = getattr(story, 'title', 'No title available')
+
+                logging.debug(f"Displaying story: {title} for category: {category_name}")
+
+                # Perform sentiment analysis with a fallback in case of failure
+                try:
+                    sentiment = analyze_text(description, model="llama3:latest")
+                except Exception as e:
+                    logging.error(f"Sentiment analysis failed: {e}")
+                    sentiment = 'Unknown'
+
+                fade_in_story(content_frame, story, sentiment_frame, sentiment)
                 entries.append(story)  # Cycle through stories
             else:
                 logging.debug(f"No stories available for category: {category_name}")
-                root.after(0, lambda: display_placeholder_message(content_frame, "No stories available"))
+                display_placeholder_message(content_frame, "No stories available")
         except queue.Empty:
             logging.debug(f"Feed queue is empty for category: {category_name}")
         finally:
             logging.debug(f"Scheduling next story display in {UPDATE_INTERVAL}ms for category: {category_name}")
-            root.after(UPDATE_INTERVAL, show_next_story)
 
     def display_placeholder_message(frame, message):
         """Display a placeholder message when no feed entries are available."""
         logging.debug(f"Displaying placeholder message for category: {category_name} - {message}")
-        for widget in frame.winfo_children():
-            widget.destroy()  # Clear existing widgets
-        label = ttk.Label(frame, text=message, font=("Helvetica", 14), anchor="center")
-        label.pack(expand=True)
+        for widget in frame.children():
+            widget.deleteLater()  # Clear existing widgets
+        label = QLabel(message, parent=frame)
+        label.setStyleSheet("font-size: 14px;")
+        label.setAlignment(Qt.AlignCenter)
+        frame.layout().addWidget(label)
 
     # Fetch feeds using threading to prevent blocking
     logging.debug(f"Starting to fetch feeds for category: {category_name}")
     run_in_thread(fetch_feed_entries)
 
-    # Schedule the first story display
-    logging.debug(f"Scheduling first story display in {UPDATE_INTERVAL}ms for category: {category_name}")
-    root.after(UPDATE_INTERVAL, show_next_story)
+    # Timer for story display
+    timer = QTimer(root)
+    timer.timeout.connect(show_next_story)
+    timer.start(UPDATE_INTERVAL)
 
     # Refresh the feed every 5 minutes (30 intervals)
     def refresh_feed():
         """Refresh feeds periodically by refetching them in the background."""
         logging.debug(f"Refreshing feeds for category: {category_name}")
         run_in_thread(fetch_feed_entries)
-        logging.debug(f"Next refresh scheduled in {UPDATE_INTERVAL * 30}ms for category: {category_name}")
-        root.after(UPDATE_INTERVAL * 30, refresh_feed)
 
-    refresh_feed()
+    # Timer for feed refresh (every 5 minutes)
+    refresh_timer = QTimer(root)
+    refresh_timer.timeout.connect(refresh_feed)
+    refresh_timer.start(UPDATE_INTERVAL * 30)
+
+    show_next_story()  # Show the first story immediately

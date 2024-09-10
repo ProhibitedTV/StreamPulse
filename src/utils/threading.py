@@ -85,3 +85,10 @@ def run_in_thread_with_timeout(target_func, timeout, *args, **kwargs):
     except Exception as e:
         logging.error(f"Thread execution timed out or error occurred: {e}", exc_info=True)
         return None
+
+def shutdown_executor():
+    """
+    Shuts down the thread pool executor gracefully, ensuring no new tasks are scheduled and existing tasks are completed.
+    """
+    logging.info("Shutting down thread pool executor.")
+    executor.shutdown(wait=False)

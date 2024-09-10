@@ -1,14 +1,15 @@
 import requests
-import ttkbootstrap as ttkb
-import tkinter as tk
+import logging
 from datetime import datetime
+from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt5.QtCore import QTimer
 from pytz import timezone
 import pytz
 from utils.threading import run_in_thread
-import logging
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def fetch_us_debt():
     """
@@ -21,7 +22,7 @@ def fetch_us_debt():
         logging.info("Fetching U.S. National Debt data...")
         url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/mspd/mspd_debt"
         response = requests.get(url)
-        response.raise_for_status()  # Raise an error for non-2xx responses
+        response.raise_for_status()
         data = response.json()
 
         if 'data' in data and len(data['data']) > 0:
@@ -37,6 +38,7 @@ def fetch_us_debt():
         logging.error(f"Error fetching U.S. national debt: {e}")
         return "Data Unavailable"
 
+
 def fetch_global_co2_emissions():
     """
     Fetches global CO2 emissions data from the World Bank API.
@@ -48,7 +50,7 @@ def fetch_global_co2_emissions():
         logging.info("Fetching global CO2 emissions data...")
         url = "https://api.worldbank.org/v2/country/WLD/indicator/EN.ATM.CO2E.KT?format=json"
         response = requests.get(url)
-        response.raise_for_status()  # Raise an error for bad responses
+        response.raise_for_status()
         data = response.json()
 
         if response.status_code == 200 and len(data) > 1 and 'value' in data[1][0]:
@@ -64,56 +66,74 @@ def fetch_global_co2_emissions():
         logging.error(f"Error fetching global CO2 emissions: {e}")
         return "Data Unavailable"
 
-def add_global_stats(global_stats_frame):
+
+def create_global_stats_widget():
     """
-    Adds global statistics such as U.S. National Debt and Global CO2 Emissions to the provided Tkinter frame.
+    Creates and returns a widget containing global statistics such as U.S. National Debt and Global CO2 Emissions.
 
-    Args:
-        global_stats_frame (ttkb.Frame): The frame where the stats will be displayed.
+    Returns:
+        QWidget: The global stats widget.
     """
-    logging.info("Setting up global statistics section...")
+    logging.info("Setting up global statistics widget...")
 
-    global_stats_label = ttkb.Label(global_stats_frame, text="Global Stats", font=("Helvetica", 18, "bold"))
-    global_stats_label.pack(pady=10)
+    global_stats_widget = QWidget()
+    layout = QVBoxLayout(global_stats_widget)
 
-    # US National Debt section
-    us_debt_label = ttkb.Label(global_stats_frame, text="US National Debt: Fetching...", font=("Helvetica", 14))
-    us_debt_label.pack(pady=5)
+    # Add global stats label
+    global_stats_label = QLabel("Global Stats", global_stats_widget)
+    global_stats_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+    layout.addWidget(global_stats_label)
+
+    # Add US National Debt label
+    us_debt_label = QLabel("US National Debt: Fetching...", global_stats_widget)
+    us_debt_label.setStyleSheet("font-size: 14px;")
+    layout.addWidget(us_debt_label)
+
+    # Add Global CO2 Emissions label
+    co2_emission_label = QLabel("Global CO2 Emissions: Fetching...", global_stats_widget)
+    co2_emission_label.setStyleSheet("font-size: 14px;")
+    layout.addWidget(co2_emission_label)
 
     def update_us_debt():
+        """Updates the U.S. National Debt label with fetched data."""
         logging.info("Updating U.S. National Debt information...")
         us_debt = fetch_us_debt()
-        us_debt_label.config(text=f"US National Debt: {us_debt}")
-        logging.info(f"U.S. National Debt updated: {us_debt}")
-
-    # Fetch debt in a background thread
-    run_in_thread(update_us_debt)
-    global_stats_frame.after(60000, lambda: run_in_thread(update_us_debt))  # Update every 60 seconds
-
-    # Global CO2 Emissions section
-    co2_emission_label = ttkb.Label(global_stats_frame, text="Global CO2 Emissions: Fetching...", font=("Helvetica", 14))
-    co2_emission_label.pack(pady=5)
+        if us_debt_label and us_debt_label.isVisible():
+            us_debt_label.setText(f"US National Debt: {us_debt}")
+            logging.info(f"U.S. National Debt updated: {us_debt}")
 
     def update_global_co2_emissions():
+        """Updates the Global CO2 Emissions label with fetched data."""
         logging.info("Updating Global CO2 Emissions information...")
         global_emission = fetch_global_co2_emissions()
-        co2_emission_label.config(text=f"Global CO2 Emissions: {global_emission}")
-        logging.info(f"Global CO2 Emissions updated: {global_emission}")
+        if co2_emission_label and co2_emission_label.isVisible():
+            co2_emission_label.setText(f"Global CO2 Emissions: {global_emission}")
+            logging.info(f"Global CO2 Emissions updated: {global_emission}")
 
-    # Fetch CO2 emissions in a background thread
+    # Fetch data in background threads
+    run_in_thread(update_us_debt)
     run_in_thread(update_global_co2_emissions)
-    global_stats_frame.after(60000, lambda: run_in_thread(update_global_co2_emissions))  # Update every 60 seconds
 
-def add_world_clock(clock_frame):
+    # Set up recurring updates every 60 seconds
+    QTimer.singleShot(60000, lambda: run_in_thread(update_us_debt))
+    QTimer.singleShot(60000, lambda: run_in_thread(update_global_co2_emissions))
+
+    return global_stats_widget
+
+
+def create_world_clock_widget():
     """
-    Adds a live world clock to the provided Tkinter frame that updates every second.
+    Creates and returns a widget displaying a live world clock with updates every second.
 
-    Args:
-        clock_frame (ttkb.Frame): The frame where the clocks will be displayed.
+    Returns:
+        QWidget: The world clock widget.
     """
-    logging.info("Setting up world clock section...")
+    logging.info("Setting up world clock widget...")
 
-    # List of cities and their time zones
+    world_clock_widget = QWidget()
+    layout = QVBoxLayout(world_clock_widget)
+
+    # Define cities and time zones
     cities = {
         "New York": "America/New_York",
         "London": "Europe/London",
@@ -122,30 +142,50 @@ def add_world_clock(clock_frame):
         "UTC": "UTC"
     }
 
-    # 12-hour or 24-hour format toggle
-    time_format_24hr = True  # Change to False for 12-hour format
+    time_format_24hr = True  # Set time format; change to False for 12-hour format
 
-    clock_label = ttkb.Label(clock_frame, text="World Clock", font=("Helvetica", 18, "bold"))
-    clock_label.pack(pady=10)
+    # Add world clock label
+    clock_label = QLabel("World Clock", world_clock_widget)
+    clock_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+    layout.addWidget(clock_label)
 
+    # Create labels for each city
     time_labels = {}
 
     for city in cities:
-        city_label = ttkb.Label(clock_frame, text=f"{city}: Fetching...", font=("Helvetica", 14))
-        city_label.pack(pady=5)
+        city_label = QLabel(f"{city}: Fetching...", world_clock_widget)
+        city_label.setStyleSheet("font-size: 14px;")
+        layout.addWidget(city_label)
         time_labels[city] = city_label
 
     def update_time():
+        """Updates the time for each city."""
+        if not world_clock_widget.isVisible():
+            logging.warning("World clock widget is not visible. Stopping clock updates.")
+            return
+
         now_utc = datetime.now(pytz.utc)
         for city, tz in cities.items():
             local_time = now_utc.astimezone(timezone(tz))
             time_string = local_time.strftime('%Y-%m-%d %H:%M:%S') if time_format_24hr else local_time.strftime('%Y-%m-%d %I:%M:%S %p')
-            time_labels[city].config(text=f"{city}: {time_string}")
-            logging.debug(f"Updated time for {city}: {time_string}")
 
-        # Refresh every second
-        clock_frame.after(1000, update_time)
+            logging.debug(f"Attempting to update time for {city}: {time_string}")
 
-    # Start the clock update
+            # Ensure the QLabel still exists and is visible
+            if city in time_labels and time_labels[city] is not None and time_labels[city].isVisible():
+                try:
+                    time_labels[city].setText(f"{city}: {time_string}")
+                    logging.debug(f"Updated time for {city}: {time_string}")
+                except RuntimeError as e:
+                    logging.error(f"Error updating time label for {city}: {e}")
+            else:
+                logging.warning(f"Label for {city} is not visible, deleted, or doesn't exist.")
+
+        # Refresh the time every second
+        QTimer.singleShot(1000, update_time)
+
+    # Start the clock updates
     logging.info("Starting world clock updates...")
     update_time()
+
+    return world_clock_widget

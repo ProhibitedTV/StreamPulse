@@ -102,18 +102,21 @@ def load_feeds_in_thread(feed, update_progress, total_feeds, loaded_feeds):
         total_feeds (int): The total number of feeds to be loaded.
         loaded_feeds (list): A shared list to keep track of the number of loaded feeds.
     """
-    time.sleep(0.5)  # Simulate network delay
-    loaded_feeds[0] += 1
-    progress = (loaded_feeds[0] / total_feeds) * 100
-    update_progress(progress)  # Update progress bar
-    logging.info(f"Loaded feed: {feed}")
+    try:
+        time.sleep(0.5)  # Simulate network delay
+        loaded_feeds[0] += 1
+        progress = (loaded_feeds[0] / total_feeds) * 100
+        update_progress(progress)  # Update progress bar
+        logging.info(f"Loaded feed: {feed}")
+    except Exception as e:
+        logging.error(f"Error loading feed {feed}: {e}")
 
 def load_feeds(main_frame, update_progress):
     """
     Loads all feeds concurrently using threads and updates the progress bar accordingly.
     
     Args:
-        main_frame (ttkb.Frame): The main frame where the feed content will be displayed.
+        main_frame: The main frame where the feed content will be displayed.
         update_progress (function): Function to update the loading progress.
     """
     total_feeds = sum(len(feeds) for feeds in RSS_FEEDS.values())
