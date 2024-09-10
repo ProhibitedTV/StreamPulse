@@ -1,59 +1,114 @@
-import unittest, requests
-from unittest.mock import patch
-from requests.exceptions import JSONDecodeError
-from src.api.sentiment import analyze_text
-
+import unittest
+from unittest.mock import patch, MagicMock
+from api.sentiment import analyze_text, list_models, update_ui
 
 class TestSentimentAnalysis(unittest.TestCase):
-    def check_model_availability(self, model_name):
-        """
-        Check if the provided model is available in Ollama's model list.
-        """
-        try:
-            response = requests.get('http://localhost:11434/api/tags')
-            available_models = response.json().get("models", [])
-            model_names = [model["name"] for model in available_models]
-            self.assertIn(model_name, model_names, f"Model '{model_name}' is not available in the model list.")
-        except (requests.exceptions.RequestException, JSONDecodeError) as e:
-            self.fail(f"Failed to check model availability: {e}")
-
-    @patch('src.api.sentiment.requests.post')
-    def test_analyze_sentiment_positive(self, mock_post):
-        """
-        Test for positive sentiment analysis.
-        """
-        mock_response = {"response": "positive"}
-        mock_post.return_value.json.return_value = mock_response
-
-        # Replace 'sentiment_model' with 'llama3:latest' or any existing model
-        self.check_model_availability("llama3:latest")
-        result = analyze_text("This is a great day!", model="llama3:latest")
-        self.assertEqual(result, "positive")
-
-    @patch('src.api.sentiment.requests.post')
-    def test_analyze_sentiment_error(self, mock_post):
-        """
-        Test for an error during sentiment analysis.
-        """
-        mock_post.side_effect = Exception("Connection error")
+    
+    @patch('api.sentiment.requests.get')
+    def test_list_models_success(self, mock_get):
+        """Test that list_models returns models on a successful API call."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            'models': [{'name': 'llama3:latest'}, {'name': 'another_model'}]
+        }
+        mock_get.return_value = mock_response
         
-        # Replace 'sentiment_model' with 'llama3:latest' or any existing model
-        self.check_model_availability("llama3:latest")
-        result = analyze_text("This is a bad day!", model="llama3:latest")
-        self.assertEqual(result, "error")
+        models = list_models()
+        self.assertEqual(models, ['llama3:latest', 'another_model'])
 
-    @patch('src.api.sentiment.requests.post')
-    def test_translation_analysis(self, mock_post):
-        """
-        Test for translation analysis with a different model.
-        """
-        mock_response = {"response": "ceci est une journée merveilleuse"}
-        mock_post.return_value.json.return_value = mock_response
+    @patch('api.sentiment.requests.get')
+    def test_list_models_connection_error(self, mock_get):
+        """Test that list_models handles connection errors gracefully."""
+        mock_get.side_effect = requests.ConnectionError
+        result = list_models()
+        self.assertEqual(result, 'error')
 
-        # Replace 'translation_model' with an actual model like 'llama3:latest'
-        self.check_model_availability("llama3:latest")
-        result = analyze_text("This is a wonderful day!", model="llama3:latest", prompt_template="Translate the following text: {text}")
-        self.assertEqual(result, "ceci est une journée merveilleuse")
+    @patch('api.sentiment.requests.get')
+    def test_list_models_timeout(self, mock_get):
+        """Test that list_models handles timeouts gracefully."""
+        mock_get.side_effect = requests.Timeout
+        result = list_models()
+        self.assertEqual(result, 'error')
+
+    @patch('api.sentiment.requests.post')
+    @patch('api.sentiment.list_models', return_value=["llama3:latest"])
+    @patch('api.sentiment.update_ui')
+    def test_analyze_text_success(self, mock_update_ui, mock_list_models, mock_post):
+        """Test that analyze_text returns the correct sentiment result on success."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {'response': 'positive'}
+        mock_post.return_value = mock_response
+
+        root = MagicMock()
+        label = MagicMock()
+        
+        result = analyze_text("This is a test text", root, label)
+        self.assertEqual(result, 'positive')
+        mock_update_ui.assert_called_with(root, label, "Sentiment analysis result: positive")
+
+    @patch('api.sentiment.requests.post')
+    @patch('api.sentiment.list_models', return_value=["llama3:latest"])
+    @patch('api.sentiment.update_ui')
+    def test_analyze_text_connection_error(self, mock_update_ui, mock_list_models, mock_post):
+        """Test that analyze_text handles connection errors."""
+        mock_post.side_effect = requests.ConnectionError
+        
+        root = MagicMock()
+        label = MagicMock()
+
+        result = analyze_text("This is a test text", root, label)
+        self.assertEqual(result, 'error')
+        mock_update_ui.assert_called_with(root, label, "Error connecting to Ollama. Ensure the server is running.")
+
+    @patch('api.sentiment.requests.post')
+    @patch('api.sentiment.list_models', return_value=["llama3:latest"])
+    @patch('api.sentiment.update_ui')
+    def test_analyze_text_timeout(self, mock_update_ui, mock_list_models, mock_post):
+        """Test that analyze_text handles timeouts."""
+        mock_post.side_effect = requests.Timeout
+        
+        root = MagicMock()
+        label = MagicMock()
+
+        result = analyze_text("This is a test text", root, label)
+        self.assertEqual(result, 'error')
+        mock_update_ui.assert_called_with(root, label, "Timeout during sentiment analysis. Check your network or server.")
+
+    @patch('api.sentiment.requests.post')
+    @patch('api.sentiment.list_models', return_value=["llama3:latest"])
+    @patch('api.sentiment.update_ui')
+    def test_analyze_text_model_error(self, mock_update_ui, mock_list_models, mock_post):
+        """Test that analyze_text handles missing models."""
+        mock_list_models.return_value = ["other_model"]
+        
+        root = MagicMock()
+        label = MagicMock()
+
+        result = analyze_text("This is a test text", root, label, model="llama3:latest")
+        self.assertEqual(result, 'model_error')
+        mock_update_ui.assert_called_with(root, label, "Model 'llama3:latest' not found. Available models: ['other_model']")
+
+    @patch('api.sentiment.requests.post')
+    @patch('api.sentiment.list_models', return_value=["llama3:latest"])
+    @patch('api.sentiment.update_ui')
+    def test_analyze_text_request_exception(self, mock_update_ui, mock_list_models, mock_post):
+        """Test that analyze_text handles request exceptions."""
+        mock_post.side_effect = requests.RequestException("Request failed")
+        
+        root = MagicMock()
+        label = MagicMock()
+
+        result = analyze_text("This is a test text", root, label)
+        self.assertEqual(result, 'error')
+        mock_update_ui.assert_called_with(root, label, "Error communicating with Ollama.")
+
+    def test_update_ui(self):
+        """Test that the update_ui function updates the label in the Tkinter UI."""
+        root = MagicMock()
+        label = MagicMock()
+
+        update_ui(root, label, "Test sentiment result")
+        root.after.assert_called_once_with(0, label.config, text="Test sentiment result")
 
 
 if __name__ == '__main__':

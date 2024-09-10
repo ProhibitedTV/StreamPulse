@@ -7,7 +7,8 @@ import pytz
 from utils.threading import run_in_thread
 import logging
 
-logging.basicConfig(level=logging.INFO)
+# Set up basic logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def fetch_us_debt():
     """
@@ -15,29 +16,25 @@ def fetch_us_debt():
 
     Returns:
         str: Formatted U.S. national debt amount or "Data Unavailable" if an error occurs.
-    
-    API Documentation:
-    This function retrieves data from the U.S. Treasury’s Fiscal Data API.
-    The API endpoint used is designed to fetch the total public debt outstanding. 
-    For more information, refer to the Fiscal Data API documentation: 
-    https://fiscaldata.treasury.gov/
     """
     try:
-        # Endpoint for the U.S. National Debt from the Treasury Fiscal Data API
+        logging.info("Fetching U.S. National Debt data...")
         url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/mspd/mspd_debt"
         response = requests.get(url)
-        response.raise_for_status()  # Raise an error for bad responses
+        response.raise_for_status()  # Raise an error for non-2xx responses
         data = response.json()
 
         if 'data' in data and len(data['data']) > 0:
-            # Extract the latest public debt amount
             latest_debt = data['data'][0]['tot_pub_debt_out_amt']
-            return f"${float(latest_debt):,.2f}"  # Format the number with commas
+            debt_formatted = f"${float(latest_debt):,.2f}"
+            logging.info(f"Fetched U.S. National Debt: {debt_formatted}")
+            return debt_formatted
         else:
             logging.error("Debt data unavailable in the response.")
             return "Data Unavailable"
+
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching US national debt: {e}")
+        logging.error(f"Error fetching U.S. national debt: {e}")
         return "Data Unavailable"
 
 def fetch_global_co2_emissions():
@@ -48,6 +45,7 @@ def fetch_global_co2_emissions():
         str: Formatted global CO2 emissions amount or "Data Unavailable" if an error occurs.
     """
     try:
+        logging.info("Fetching global CO2 emissions data...")
         url = "https://api.worldbank.org/v2/country/WLD/indicator/EN.ATM.CO2E.KT?format=json"
         response = requests.get(url)
         response.raise_for_status()  # Raise an error for bad responses
@@ -55,10 +53,13 @@ def fetch_global_co2_emissions():
 
         if response.status_code == 200 and len(data) > 1 and 'value' in data[1][0]:
             co2 = data[1][0]['value']
-            return f"{co2:,} kt CO2" if co2 is not None else "Data Unavailable"
+            co2_formatted = f"{co2:,} kt CO2" if co2 is not None else "Data Unavailable"
+            logging.info(f"Fetched Global CO2 Emissions: {co2_formatted}")
+            return co2_formatted
         else:
             logging.error("CO2 emissions data unavailable in the response.")
             return "Data Unavailable"
+
     except Exception as e:
         logging.error(f"Error fetching global CO2 emissions: {e}")
         return "Data Unavailable"
@@ -70,6 +71,8 @@ def add_global_stats(global_stats_frame):
     Args:
         global_stats_frame (ttkb.Frame): The frame where the stats will be displayed.
     """
+    logging.info("Setting up global statistics section...")
+
     global_stats_label = ttkb.Label(global_stats_frame, text="Global Stats", font=("Helvetica", 18, "bold"))
     global_stats_label.pack(pady=10)
 
@@ -78,8 +81,10 @@ def add_global_stats(global_stats_frame):
     us_debt_label.pack(pady=5)
 
     def update_us_debt():
+        logging.info("Updating U.S. National Debt information...")
         us_debt = fetch_us_debt()
         us_debt_label.config(text=f"US National Debt: {us_debt}")
+        logging.info(f"U.S. National Debt updated: {us_debt}")
 
     # Fetch debt in a background thread
     run_in_thread(update_us_debt)
@@ -90,8 +95,10 @@ def add_global_stats(global_stats_frame):
     co2_emission_label.pack(pady=5)
 
     def update_global_co2_emissions():
+        logging.info("Updating Global CO2 Emissions information...")
         global_emission = fetch_global_co2_emissions()
         co2_emission_label.config(text=f"Global CO2 Emissions: {global_emission}")
+        logging.info(f"Global CO2 Emissions updated: {global_emission}")
 
     # Fetch CO2 emissions in a background thread
     run_in_thread(update_global_co2_emissions)
@@ -104,6 +111,8 @@ def add_world_clock(clock_frame):
     Args:
         clock_frame (ttkb.Frame): The frame where the clocks will be displayed.
     """
+    logging.info("Setting up world clock section...")
+
     # List of cities and their time zones
     cities = {
         "New York": "America/New_York",
@@ -130,15 +139,13 @@ def add_world_clock(clock_frame):
         now_utc = datetime.now(pytz.utc)
         for city, tz in cities.items():
             local_time = now_utc.astimezone(timezone(tz))
-            if time_format_24hr:
-                time_string = local_time.strftime('%Y-%m-%d %H:%M:%S')
-            else:
-                time_string = local_time.strftime('%Y-%m-%d %I:%M:%S %p')
-
+            time_string = local_time.strftime('%Y-%m-%d %H:%M:%S') if time_format_24hr else local_time.strftime('%Y-%m-%d %I:%M:%S %p')
             time_labels[city].config(text=f"{city}: {time_string}")
+            logging.debug(f"Updated time for {city}: {time_string}")
 
         # Refresh every second
         clock_frame.after(1000, update_time)
 
-    # Run the clock update in a separate thread
-    run_in_thread(update_time)
+    # Start the clock update
+    logging.info("Starting world clock updates...")
+    update_time()

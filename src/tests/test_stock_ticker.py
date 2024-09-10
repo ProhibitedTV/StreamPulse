@@ -1,85 +1,77 @@
 import unittest
-from unittest.mock import patch
-import pandas as pd
-from src.api.stock_ticker import fetch_stock_price, fetch_from_yahoo_finance
+from unittest.mock import patch, MagicMock
+from ui.stock_ticker import create_stock_ticker, create_stock_ticker_frame
+import ttkbootstrap as ttkb
 
 class TestStockTicker(unittest.TestCase):
-    """
-    Unit test class for testing stock ticker functionalities, including fetching stock prices
-    from Alpha Vantage and Yahoo Finance.
-    """
 
-    def setUp(self):
-        """
-        Reset the alpha_vantage_failed flag before each test to ensure that 
-        Alpha Vantage is retried for each new test run.
-        """
-        global alpha_vantage_failed
-        alpha_vantage_failed = False
+    @patch('ui.stock_ticker.fetch_stock_price')
+    @patch('ui.stock_ticker.STOCKS', ['AAPL', 'GOOGL', 'MSFT'])
+    def test_get_ticker_text(self, mock_fetch_stock_price):
+        """Test that stock prices are fetched and ticker text is correctly formatted."""
+        # Mock stock prices
+        mock_fetch_stock_price.side_effect = [150.12, 2800.55, 300.78]
 
-    @patch('api.stock_ticker.requests.get')
-    def test_fetch_stock_price_alpha_success(self, mock_get):
-        """
-        Test the fetch_stock_price function with a successful response from Alpha Vantage.
-        
-        Mocks the Alpha Vantage API response to simulate fetching a stock price and asserts 
-        that the function returns the correct price.
-        """
-        mock_response = {
-            "Global Quote": {
-                "05. price": "145.23"
-            }
-        }
-        mock_get.return_value.json.return_value = mock_response
-        mock_get.return_value.status_code = 200
+        # Create mock Tkinter frame and root
+        mock_root = MagicMock()
+        mock_stock_frame = MagicMock()
 
-        result = fetch_stock_price("AAPL")
-        self.assertEqual(result, "145.23")
+        # Call the function to create the stock ticker
+        create_stock_ticker(mock_stock_frame, mock_root)
 
-    @patch('api.stock_ticker.requests.get')
-    @patch('api.stock_ticker.fetch_from_yahoo_finance')
-    def test_fetch_stock_price_alpha_failure_yahoo_success(self, mock_yahoo, mock_get):
-        """
-        Test the fetch_stock_price function when Alpha Vantage fails, 
-        and it falls back to Yahoo Finance.
+        # Check that stock prices were fetched correctly
+        self.assertEqual(mock_fetch_stock_price.call_count, 3)  # Should be called for each stock
 
-        Mocks an API failure in Alpha Vantage and asserts that the function successfully
-        falls back to Yahoo Finance to retrieve the stock price.
-        """
-        mock_get.side_effect = Exception("API Error")
-        mock_yahoo.return_value = "150.00"
+        # Extract the label and verify the text was set correctly
+        ticker_text = "AAPL: $150.12  |  GOOGL: $2800.55  |  MSFT: $300.78  |  "
+        mock_stock_frame.pack.assert_called_once()  # Ensure the label was packed
+        self.assertIn(ticker_text, mock_stock_frame.children.values()[0].cget("text"))  # Check if the ticker text was set
 
-        result = fetch_stock_price("AAPL")
-        self.assertEqual(result, "150.00")
+    @patch('ui.stock_ticker.fetch_stock_price')
+    @patch('ui.stock_ticker.STOCKS', ['AAPL'])
+    @patch('ttkbootstrap.Frame')
+    def test_create_stock_ticker_frame(self, mock_frame, mock_fetch_stock_price):
+        """Test the creation of the stock ticker frame."""
+        # Mock stock price for AAPL
+        mock_fetch_stock_price.return_value = 150.12
 
-    @patch('api.stock_ticker.yf.Ticker')
-    def test_fetch_from_yahoo_finance_success(self, mock_ticker):
-        """
-        Test the fetch_from_yahoo_finance function with a successful response.
+        # Mock root Tkinter window
+        mock_root = MagicMock()
 
-        Mocks the Yahoo Finance API response to simulate fetching historical stock prices
-        and asserts that the function returns the correct stock price.
-        """
-        mock_history = pd.DataFrame({
-            'Close': [150.50]
-        })
-        mock_ticker.return_value.history.return_value = mock_history
+        # Call the function to create the stock ticker frame
+        create_stock_ticker_frame(mock_root)
 
-        result = fetch_from_yahoo_finance("AAPL")
-        self.assertEqual(result, "150.50")
+        # Ensure the stock ticker frame is packed
+        mock_frame.assert_called_once()
+        self.assertTrue(mock_frame.return_value.pack.called)
 
-    @patch('api.stock_ticker.yf.Ticker')
-    def test_fetch_from_yahoo_finance_failure(self, mock_ticker):
-        """
-        Test the fetch_from_yahoo_finance function with a failure in Yahoo Finance.
+        # Ensure the stock price was fetched and the ticker was initialized
+        mock_fetch_stock_price.assert_called_once_with('AAPL')
 
-        Mocks an API failure in Yahoo Finance and asserts that the function returns "N/A"
-        when no data is available.
-        """
-        mock_ticker.side_effect = Exception("API Error")
+    @patch('ui.stock_ticker.fetch_stock_price')
+    @patch('ttkbootstrap.Frame')
+    def test_scroll_ticker(self, mock_frame, mock_fetch_stock_price):
+        """Test that the ticker scrolls correctly."""
+        # Mock stock price for one stock
+        mock_fetch_stock_price.return_value = 150.12
 
-        result = fetch_from_yahoo_finance("AAPL")
-        self.assertEqual(result, "N/A")
+        # Mock root Tkinter window
+        mock_root = MagicMock()
+        mock_root.after = MagicMock()
+
+        # Call the function to create the stock ticker
+        create_stock_ticker(mock_frame, mock_root)
+
+        # Simulate the scrolling of the ticker
+        initial_text = "AAPL: $150.12  |  "
+        stock_label = mock_frame.return_value.children.values()[0]
+        stock_label.cget.return_value = initial_text
+        create_stock_ticker(mock_frame, mock_root)
+
+        # Ensure that the text scrolls as expected
+        updated_text = initial_text[1:] + initial_text[0]
+        stock_label.config.assert_called_with(text=updated_text)
+        mock_root.after.assert_called()
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,12 +2,14 @@ import os
 import logging
 import tkinter as tk
 from tkinter import ttk
-
 from PIL import Image, ImageTk
 
+# Internal Project Imports
 from api.fetchers import fetch_image, sanitize_html
 from utils.threading import run_in_thread
 from utils.web import open_link
+from api.tts_engine import tts_queue
+from api.sentiment import analyze_text
 
 def display_story_card(story, parent_frame, sentiment_frame):
     """
@@ -52,19 +54,23 @@ def display_story_card(story, parent_frame, sentiment_frame):
         summary = f"Headline: {headline}. Sentiment: {sentiment}."
         tts_queue.put(summary)
 
-    run_in_thread(analyze_sentiment)  # Run sentiment analysis in the background using utils.threading
+    run_in_thread(analyze_sentiment)  # Run sentiment analysis in the background
 
     # Create canvas for displaying the story
     canvas = tk.Canvas(parent_frame, width=450, height=400, bg="#FFFFFF", bd=2, highlightthickness=2, highlightbackground="blue")
     canvas.pack(padx=10, pady=10)
 
     # Create a frame inside the canvas to hold the story content
-    story_frame = ttkb.Frame(canvas, padding=10, style="Glass.TFrame")
+    story_frame = ttk.Frame(canvas, padding=10, style="Glass.TFrame")
     story_frame.place(x=20, y=20, width=410, height=360)
 
     # Display headline
-    headline_label = ttkb.Label(story_frame, text=headline, wraplength=380, anchor="center", justify="center", font=("Helvetica", 18, "bold"), bootstyle="info")
+    headline_label = ttk.Label(story_frame, text=headline, wraplength=380, anchor="center", justify="center", font=("Helvetica", 18, "bold"), bootstyle="info")
     headline_label.pack(pady=10)
+
+    # To hold the image reference
+    if not hasattr(parent_frame, 'image_references'):
+        parent_frame.image_references = []
 
     # Display the image if available or fallback to the default image
     def load_default_image():
@@ -73,15 +79,24 @@ def display_story_card(story, parent_frame, sentiment_frame):
             default_image = Image.open(default_image_path)
             default_image = default_image.resize((380, 180), Image.Resampling.LANCZOS)
             display_image(default_image)
+        except FileNotFoundError:
+            logging.error(f"Default image not found at {default_image_path}. Please ensure the file exists.")
         except Exception as e:
             logging.error(f"Error loading default image: {e}")
 
     def display_image(image):
         """Display the fetched or default image in the story frame."""
-        img = ImageTk.PhotoImage(image)
-        image_label = tk.Label(story_frame, image=img, bg="#FFFFFF")
-        image_label.image = img  # Prevent the image from being garbage collected
-        image_label.pack(pady=10)
+        try:
+            img = ImageTk.PhotoImage(image)
+            image_label = tk.Label(story_frame, image=img, bg="#FFFFFF")
+            image_label.image = img  # Prevent the image from being garbage collected
+            image_label.pack(pady=10)
+
+            # Ensure the reference to the image is kept
+            parent_frame.image_references.append(img)  
+        except Exception as e:
+            logging.error(f"Error displaying image: {e}")
+            load_default_image()  # Fallback to default image if display fails
 
     if image_url:
         logging.debug(f"Fetching image from: {image_url}")
@@ -97,18 +112,18 @@ def display_story_card(story, parent_frame, sentiment_frame):
                 logging.error(f"Error fetching image from {image_url}: {e}")
                 parent_frame.after(0, load_default_image)  # Load default image on error
 
-        run_in_thread(load_image)  # Load image in the background using utils.threading
+        run_in_thread(load_image)  # Load image in the background
     else:
         logging.warning(f"No image URL provided for story: {headline}, using default image.")
         load_default_image()
 
     # Display description
-    description_label = ttkb.Label(story_frame, text=description, wraplength=380, anchor="w", justify="left", font=("Helvetica", 14), bootstyle="light")
+    description_label = ttk.Label(story_frame, text=description, wraplength=380, anchor="w", justify="left", font=("Helvetica", 14), bootstyle="light")
     description_label.pack(pady=10)
 
     # Display source link
     source = story.get("link", "Unknown Source")
-    source_label = ttkb.Label(story_frame, text=f"Read more at: {source}", anchor="center", font=("Helvetica", 12, "italic"), cursor="hand2", bootstyle="info")
+    source_label = ttk.Label(story_frame, text=f"Read more at: {source}", anchor="center", font=("Helvetica", 12, "italic"), cursor="hand2", bootstyle="info")
     source_label.pack(pady=10)
     source_label.bind("<Button-1>", lambda e: open_link(source))
 
@@ -118,7 +133,7 @@ def display_progress_bar(parent_frame):
     """
     Displays a progress bar to indicate the transition period between stories.
     """
-    progress_frame = ttkb.Frame(parent_frame)
+    progress_frame = ttk.Frame(parent_frame)
     progress_frame.pack(fill="x", pady=5)
 
     progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", length=400, mode="determinate")
@@ -163,7 +178,7 @@ def clear_and_display_story(content_frame, story, sentiment_frame):
         story (feedparser.FeedParserDict): The RSS feed story object containing story data.
         sentiment_frame (ttk.Frame): Frame for displaying sentiment analysis results.
     """
-    logging.debug(f"Clearing and displaying new story in content frame. Story title: {story.title}")
+    logging.debug(f"Clearing and displaying new story in content frame. Story title: {story.get('title', 'No title available')}")
 
     for widget in content_frame.winfo_children():
         widget.destroy()

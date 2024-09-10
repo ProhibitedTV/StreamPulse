@@ -22,7 +22,7 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
     """
     Fetch and display RSS feed content dynamically, updating every 10 seconds.
     Also updates sentiment analysis in a separate widget and performs TTS.
-    
+
     Args:
         rss_feeds (list): A list of RSS feed URLs to fetch data from.
         content_frame (tk.Widget): The frame in the GUI where the feed content will be displayed.
@@ -55,6 +55,7 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
             root.after(0, lambda: display_placeholder_message(content_frame, "No stories available"))
         else:
             logging.info(f"Total entries fetched for {category_name}: {len(feed_entries)}")
+            logging.debug(f"Adding {len(feed_entries)} entries to the queue for category: {category_name}")
             feed_queue.put((category_name, feed_entries))
 
     def show_next_story():
@@ -63,27 +64,35 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
             category, entries = feed_queue.get_nowait()
             if category == category_name and entries:
                 story = entries.pop(0)
-                root.after(0, lambda: fade_in_story(content_frame, story, sentiment_frame))
+                logging.debug(f"Displaying story: {story.title} for category: {category_name}")
+                # Perform sentiment analysis on the story's description
+                description = sanitize_html(story.description)
+                sentiment = analyze_text(description, root, sentiment_frame, model="llama3:latest")
+                root.after(0, lambda: fade_in_story(content_frame, story, sentiment_frame, sentiment))
                 entries.append(story)  # Cycle through stories
             else:
                 logging.debug(f"No stories available for category: {category_name}")
                 root.after(0, lambda: display_placeholder_message(content_frame, "No stories available"))
         except queue.Empty:
-            logging.debug(f"No new stories in the feed queue for category: {category_name}")
+            logging.debug(f"Feed queue is empty for category: {category_name}")
         finally:
+            logging.debug(f"Scheduling next story display in {UPDATE_INTERVAL}ms for category: {category_name}")
             root.after(UPDATE_INTERVAL, show_next_story)
 
     def display_placeholder_message(frame, message):
         """Display a placeholder message when no feed entries are available."""
+        logging.debug(f"Displaying placeholder message for category: {category_name} - {message}")
         for widget in frame.winfo_children():
             widget.destroy()  # Clear existing widgets
         label = ttk.Label(frame, text=message, font=("Helvetica", 14), anchor="center")
         label.pack(expand=True)
 
     # Fetch feeds using threading to prevent blocking
+    logging.debug(f"Starting to fetch feeds for category: {category_name}")
     run_in_thread(fetch_feed_entries)
 
     # Schedule the first story display
+    logging.debug(f"Scheduling first story display in {UPDATE_INTERVAL}ms for category: {category_name}")
     root.after(UPDATE_INTERVAL, show_next_story)
 
     # Refresh the feed every 5 minutes (30 intervals)
@@ -91,6 +100,7 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
         """Refresh feeds periodically by refetching them in the background."""
         logging.debug(f"Refreshing feeds for category: {category_name}")
         run_in_thread(fetch_feed_entries)
+        logging.debug(f"Next refresh scheduled in {UPDATE_INTERVAL * 30}ms for category: {category_name}")
         root.after(UPDATE_INTERVAL * 30, refresh_feed)
 
     refresh_feed()

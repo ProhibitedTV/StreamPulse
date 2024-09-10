@@ -1,7 +1,7 @@
 import os
 import io
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import feedparser
@@ -35,6 +35,9 @@ alpha_vantage_failed = False
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
+# Initialize thread pool for concurrency
+executor = ThreadPoolExecutor(max_workers=5)
+
 @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
 def fetch_rss_feed(feed_url):
     """
@@ -55,6 +58,7 @@ def fetch_rss_feed(feed_url):
         logging.error(f"Error fetching feed from {feed_url}: {e}")
         return None
 
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
 def fetch_image(url, width, height):
     """
     Fetches and resizes an image from the provided URL, returns a Tkinter-compatible image object.
@@ -123,16 +127,15 @@ def fetch_all_feeds(feed_urls):
     """
     feed_entries = []
     
-    def fetch_feed(feed_url):
-        return fetch_rss_feed(feed_url)
-
-    # Use utils.threading.run_in_thread for each feed URL to avoid blocking
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(fetch_feed, url) for url in feed_urls]
-        for future in futures:
-            result = future.result()
-            if result:
-                feed_entries.extend(result.entries[:3])  # Limit to 3 stories per feed
+        futures = {executor.submit(fetch_rss_feed, url): url for url in feed_urls}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result:
+                    feed_entries.extend(result.entries[:3])  # Limit to 3 stories per feed
+            except Exception as e:
+                logging.error(f"Error fetching RSS feed: {e}")
     return feed_entries
 
 def fetch_stock_price(symbol):
@@ -147,7 +150,7 @@ def fetch_stock_price(symbol):
     """
     global alpha_vantage_failed
 
-    if alpha_vantage_failed:
+    if alpha_vantage_failed or not API_KEY:
         return fetch_from_yahoo_finance(symbol)
 
     alpha_vantage_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={API_KEY}"
@@ -182,27 +185,18 @@ def fetch_from_yahoo_finance(symbol: str) -> str:
         str: Stock price as a formatted string if successful, otherwise "N/A".
     """
     try:
-        # Fetch the ticker data for the given symbol
         ticker = yf.Ticker(symbol)
-
-        # Retrieve the most recent trading day's closing price
         hist = ticker.history(period="1d")
         
         if hist.empty:
             logging.warning(f"No data returned for {symbol}. It may be an invalid symbol or the market is closed.")
             return "N/A"
 
-        # Extract the latest closing price
         price = hist['Close'].iloc[-1]
         formatted_price = f"{price:.2f}"
-        
         logging.info(f"Fetched price for {symbol} from Yahoo Finance: {formatted_price}")
         return formatted_price
 
-    except yf.YFRequestException as e:
-        logging.error(f"Request error fetching stock data for {symbol}: {e}")
-    except IndexError as e:
-        logging.error(f"No closing price available for {symbol}: {e}")
     except Exception as e:
         logging.error(f"Unexpected error fetching stock data from Yahoo Finance for {symbol}: {e}")
     

@@ -1,54 +1,57 @@
 import unittest
-from urllib.parse import urlparse
-from src.ui.feeds import (
-    GENERAL_RSS_FEEDS, FINANCIAL_RSS_FEEDS, 
-    VIDEO_GAMES_RSS_FEEDS, SCIENCE_TECH_RSS_FEEDS, 
-    HEALTH_ENVIRONMENT_RSS_FEEDS, ENTERTAINMENT_RSS_FEEDS
-)
+from unittest.mock import patch
+from ui.feeds import get_feeds_by_category, load_feeds_in_thread, RSS_FEEDS
+from utils.threading import run_in_thread
+import time
+from concurrent.futures import TimeoutError
 
-class TestRSSFeeds(unittest.TestCase):
-    
-    def validate_feed_list(self, feed_list, feed_type):
-        """
-        Helper method to validate RSS feed lists.
-        
-        :param feed_list: The list of RSS feed URLs to validate.
-        :param feed_type: A string representing the type of feed (used for error messages).
-        """
-        self.assertIsInstance(feed_list, list, f"{feed_type} RSS feed list should be a list.")
-        self.assertGreater(len(feed_list), 0, f"{feed_type} RSS feed list should not be empty.")
-        
-        for feed_url in feed_list:
-            with self.subTest(feed_url=feed_url):
-                self.assertIsInstance(feed_url, str, f"Each feed URL in {feed_type} should be a string.")
-                parsed_url = urlparse(feed_url)
-                self.assertTrue(parsed_url.scheme in ["http", "https"], f"Invalid URL scheme in {feed_url}")
-                self.assertTrue(parsed_url.netloc, f"Invalid domain in {feed_url}")
-                self.assertTrue(parsed_url.path, f"URL path is missing in {feed_url}")
+class TestFeeds(unittest.TestCase):
 
-    def test_general_rss_feeds(self):
-        """Test the validity of General News RSS feeds."""
-        self.validate_feed_list(GENERAL_RSS_FEEDS, "General")
+    def test_get_feeds_by_valid_category(self):
+        """Test fetching feeds for a valid category."""
+        category = "general"
+        feeds = get_feeds_by_category(category)
+        self.assertEqual(feeds, RSS_FEEDS[category.lower()])
 
-    def test_financial_rss_feeds(self):
-        """Test the validity of Financial News RSS feeds."""
-        self.validate_feed_list(FINANCIAL_RSS_FEEDS, "Financial")
-    
-    def test_video_games_rss_feeds(self):
-        """Test the validity of Video Games RSS feeds."""
-        self.validate_feed_list(VIDEO_GAMES_RSS_FEEDS, "Video Games")
+    def test_get_feeds_by_invalid_category(self):
+        """Test fetching feeds for an invalid category."""
+        category = "invalid_category"
+        with self.assertLogs('root', level='ERROR') as log:
+            feeds = get_feeds_by_category(category)
+            self.assertEqual(feeds, [])
+            self.assertIn("Invalid feed category", log.output[0])
 
-    def test_science_tech_rss_feeds(self):
-        """Test the validity of Science & Tech RSS feeds."""
-        self.validate_feed_list(SCIENCE_TECH_RSS_FEEDS, "Science & Tech")
+    def test_get_feeds_by_category_case_insensitivity(self):
+        """Test that categories are case insensitive."""
+        category = "GENERAL"
+        feeds = get_feeds_by_category(category)
+        self.assertEqual(feeds, RSS_FEEDS[category.lower()])
 
-    def test_health_environment_rss_feeds(self):
-        """Test the validity of Health & Environment RSS feeds."""
-        self.validate_feed_list(HEALTH_ENVIRONMENT_RSS_FEEDS, "Health & Environment")
+    @patch('time.sleep', return_value=None)  # Mock sleep to avoid delays in the test
+    def test_load_feeds_in_thread(self, mock_sleep):
+        """Test loading a feed in a thread and updating progress."""
+        loaded_feeds = [0]
+        total_feeds = len(RSS_FEEDS["general"])
 
-    def test_entertainment_rss_feeds(self):
-        """Test the validity of Entertainment RSS feeds."""
-        self.validate_feed_list(ENTERTAINMENT_RSS_FEEDS, "Entertainment")
+        def update_progress(progress):
+            """Mock function to simulate progress update."""
+            self.assertTrue(0 <= progress <= 100)
+
+        # Use run_in_thread to load feeds in background threads
+        futures = []
+        for feed in RSS_FEEDS["general"]:
+            future = run_in_thread(load_feeds_in_thread, feed, update_progress, total_feeds, loaded_feeds)
+            futures.append(future)
+
+        # Wait for all futures to complete with a timeout
+        try:
+            for future in futures:
+                future.result(timeout=5)  # Set a 5-second timeout for each thread
+        except TimeoutError:
+            self.fail("Thread execution timed out")
+
+        # Check that the loaded feeds counter is updated correctly
+        self.assertEqual(loaded_feeds[0], len(RSS_FEEDS["general"]))
 
 if __name__ == '__main__':
     unittest.main()
