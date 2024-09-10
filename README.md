@@ -9,6 +9,7 @@ StreamPulse is a dynamic news feed display application that fetches and displays
 - **Stock Ticker**: Real-time stock price updates using financial APIs.
 - **Global Stats**: Display global statistics such as CO2 emissions and US National Debt.
 - **World Clock**: Show current time in multiple time zones.
+- **Multithreaded Loading**: Feeds and stock data load simultaneously in the background, ensuring fast and efficient performance.
 
 ---
 
@@ -106,6 +107,8 @@ StreamPulse/
 ├── src/                        # Source code
 │   ├── api/                    # API-related scripts (sentiment analysis, etc.)
 │   ├── ui/                     # UI-related scripts
+│   ├── utils/                  # Utility scripts, including threading
+│   │   └── threading.py        # Threading utilities for running background tasks
 │   ├── main.py                 # Main entry point for the application
 │   └── tests/                  # Unit tests
 └── README.md                   # Project documentation
