@@ -21,6 +21,15 @@ def setup_main_frame(root, feeds_data, stock_data):
     """
     logging.debug("Setting up main frame...")
 
+    # Check if feeds_data and stock_data are None
+    if feeds_data is None:
+        logging.error("Feeds data is None. Cannot set up news sections.")
+        return  # Early return if feeds_data is None
+
+    if stock_data is None:
+        logging.error("Stock data is None. Cannot create stock ticker widget.")
+        return  # Early return if stock_data is None
+
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     bg_image_path = os.path.join(project_root, 'images', 'bg.png')
 
@@ -42,7 +51,7 @@ def setup_main_frame(root, feeds_data, stock_data):
     # Stock ticker at the bottom, spanning across the full window width
     stock_ticker_frame = create_stock_ticker_widget(stock_data)
     stock_ticker_frame.setFixedHeight(50)  # Adjust height for better visibility
-    stock_ticker_frame.setStyleSheet("""
+    stock_ticker_frame.setStyleSheet(""" 
         background-color: rgba(0, 0, 0, 0.8); 
         border-radius: 5px;
         color: white;
@@ -126,7 +135,7 @@ def create_news_sections(layout, root, feeds_data):
 
     for i, (category_name, internal_category) in enumerate(categories):
         section_frame = QFrame(root)
-        section_frame.setStyleSheet("""
+        section_frame.setStyleSheet(""" 
             background-color: rgba(255, 255, 255, 0.05);
             border-radius: 10px;
             padding: 15px;
@@ -139,7 +148,7 @@ def create_news_sections(layout, root, feeds_data):
 
         label = QLabel(f"{category_name} News", section_frame)
         label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("""
+        label.setStyleSheet(""" 
             font-size: 18px;
             font-weight: bold;
             color: #ecf0f1;
@@ -176,7 +185,7 @@ def add_stats_and_clock_widgets(layout, central_widget):
         None
     """
     stats_clock_frame = QFrame(central_widget)
-    stats_clock_frame.setStyleSheet("""
+    stats_clock_frame.setStyleSheet(""" 
         background-color: rgba(255, 255, 255, 0.1);
         border-radius: 10px;
         padding: 10px;

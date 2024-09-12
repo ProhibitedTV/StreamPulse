@@ -1,3 +1,18 @@
+"""
+tts_engine.py
+
+This module provides text-to-speech (TTS) functionality using the pyttsx3 library.
+It manages a TTS queue to process and convert text to speech asynchronously, ensuring
+that the TTS operations do not block the main PyQt5 application.
+
+Functions:
+    process_tts_queue - Continuously processes the TTS queue in a separate thread.
+    add_to_tts_queue - Adds text to the TTS queue for conversion to speech.
+    start_tts_thread - Starts the background thread for processing TTS requests.
+    stop_tts_thread - Stops the TTS processing thread gracefully.
+    shutdown_tts - Shuts down the TTS engine and stops the TTS thread.
+"""
+
 import pyttsx3
 import queue
 import logging
@@ -19,11 +34,11 @@ tts_queue = queue.Queue()
 
 def process_tts_queue():
     """
-    Continuously processes the text-to-speech (TTS) queue, converting text to speech.
+    Continuously processes the TTS queue, converting text to speech using pyttsx3.
     
-    This function is run in a separate thread to avoid blocking the main application. It checks 
-    for new TTS requests in the queue, and if found, processes them one by one by passing them 
-    to the pyttsx3 engine. When 'None' is received, the thread will gracefully exit.
+    Runs in a separate thread to avoid blocking the main application. The function retrieves
+    text from the queue and passes it to the TTS engine. It exits gracefully when a 'None'
+    signal is added to the queue.
     """
     if not engine:
         logging.error("TTS engine is not initialized. Exiting TTS queue processing.")
@@ -31,13 +46,13 @@ def process_tts_queue():
     
     while True:
         try:
-            summary = tts_queue.get()  # Block and wait for a new TTS request
-            if summary is None:
+            text = tts_queue.get()  # Block and wait for a new TTS request
+            if text is None:
                 logging.info("Received termination signal. Exiting TTS processing thread.")
                 break  # Exit thread if None is received
             
-            logging.info(f"Processing TTS request: {summary}")
-            engine.say(summary)
+            logging.info(f"Processing TTS request: {text}")
+            engine.say(text)
             engine.runAndWait()
             tts_queue.task_done()
         except Exception as e:
@@ -46,10 +61,10 @@ def process_tts_queue():
 
 def add_to_tts_queue(text):
     """
-    Adds a text summary to the TTS queue for processing.
+    Adds text to the TTS queue for processing by the TTS engine.
 
     Args:
-        text (str): The text to be spoken by the TTS engine.
+        text (str): The text to be converted to speech.
     
     Raises:
         ValueError: If the provided text is empty or None.
@@ -62,29 +77,31 @@ def add_to_tts_queue(text):
 
 def start_tts_thread():
     """
-    Starts the TTS processing thread in the background to handle queued TTS requests.
-
-    This function utilizes the `run_in_thread` utility to start the thread safely and 
-    ensure the TTS processing is handled asynchronously.
+    Starts a background thread to continuously process the TTS queue.
+    
+    This ensures that text added to the queue is processed asynchronously without
+    blocking the main PyQt5 application.
     """
     logging.info("Starting TTS processing thread.")
     run_in_thread(process_tts_queue)
 
 def stop_tts_thread():
     """
-    Stops the TTS processing thread gracefully by sending a termination signal.
+    Stops the TTS processing thread gracefully by sending a termination signal (None).
     
-    This ensures that the TTS engine completes any ongoing requests before stopping.
+    This ensures that any ongoing TTS requests are completed before stopping the thread.
     """
     logging.info("Stopping TTS processing thread.")
-    tts_queue.put(None)  # Sending a termination signal to the thread
+    tts_queue.put(None)  # Sending termination signal to the thread
 
-# Start the TTS processing thread when the module is loaded
+# Automatically start the TTS processing thread when the module is loaded
 start_tts_thread()
 
 def shutdown_tts():
     """
-    Shuts down the TTS engine and stops the TTS thread when the application exits.
+    Shuts down the TTS engine and stops the TTS processing thread.
+    
+    This function should be called when the application is exiting to clean up resources.
     """
     logging.info("Shutting down TTS engine.")
     stop_tts_thread()

@@ -1,17 +1,35 @@
+"""
+fetchers.py
+
+This module contains utility functions and classes for fetching data related to RSS feeds,
+stock prices, and images. It uses retry logic for network requests, handles API interactions
+with Alpha Vantage and Yahoo Finance, and fetches and processes images for the application.
+
+Classes:
+    FetchRSSFeeds - Asynchronous class to fetch RSS feed entries.
+    FetchStockData - Asynchronous class to fetch stock prices and emit progress.
+    
+Functions:
+    fetch_rss_feed - Fetches and parses an RSS feed with retry logic.
+    fetch_stock_price - Fetches stock prices using Alpha Vantage or Yahoo Finance.
+    fetch_from_yahoo_finance - Fetches stock price from Yahoo Finance as a fallback.
+    fetch_image - Fetches and resizes an image from a URL, returns a QPixmap object.
+    load_default_image - Loads a default image if the fetching fails.
+    sanitize_html - Sanitizes HTML content to remove unsafe elements.
+"""
+
 import os
 import io
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import feedparser
 import yfinance as yf
 from PIL import Image
 from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import QThread, pyqtSignal
 from dotenv import load_dotenv
 from tenacity import retry, wait_exponential, stop_after_attempt
 import bleach
-
-from PyQt5.QtCore import QThread, pyqtSignal
 
 # Constants
 RSS_FETCH_TIMEOUT = 15  # Timeout in seconds for fetching RSS feeds
@@ -34,9 +52,16 @@ alpha_vantage_failed = False
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
-# Use QThread for asynchronous fetching
+# Classes for Asynchronous Fetching
 class FetchRSSFeeds(QThread):
-    progress_signal = pyqtSignal(int, str)  # Signal to update progress
+    """
+    Fetches RSS feeds asynchronously and emits progress updates.
+    
+    Attributes:
+        feed_urls (list): List of RSS feed URLs to fetch.
+        progress_signal (pyqtSignal): Signal to update progress in the main application.
+    """
+    progress_signal = pyqtSignal(int, str)
 
     def __init__(self, feed_urls):
         super().__init__()
@@ -44,7 +69,7 @@ class FetchRSSFeeds(QThread):
 
     def run(self):
         """
-        Run the RSS feed fetching in a background thread and emit progress signals.
+        Fetch RSS feed entries in a background thread and emit progress signals.
         """
         feed_entries = []
         total_feeds = len(self.feed_urls)
@@ -58,13 +83,21 @@ class FetchRSSFeeds(QThread):
 
         self.progress_signal.emit(50, "Finished loading feeds")  # 50% done
 
+
 class FetchStockData(QThread):
-    progress_signal = pyqtSignal(int, str)  # Signal to update progress
-    stock_data_signal = pyqtSignal(str)     # Signal to pass stock data
+    """
+    Fetches stock data asynchronously and emits progress updates.
+    
+    Attributes:
+        progress_signal (pyqtSignal): Signal to update progress in the main application.
+        stock_data_signal (pyqtSignal): Signal to pass the formatted stock data string.
+    """
+    progress_signal = pyqtSignal(int, str)
+    stock_data_signal = pyqtSignal(str)
 
     def run(self):
         """
-        Run the stock data fetching in a background thread and emit progress signals.
+        Fetch stock prices in a background thread and emit progress signals.
         """
         stock_prices = []
         total_stocks = len(STOCKS)
@@ -80,11 +113,12 @@ class FetchStockData(QThread):
         self.progress_signal.emit(100, "Finished loading stocks")  # 100% done
 
 
+# Functions for Fetching Data
 @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
 def fetch_rss_feed(feed_url):
     """
     Fetches RSS feed content from the provided URL with retry logic.
-
+    
     Args:
         feed_url (str): The RSS feed URL to fetch.
 
@@ -123,7 +157,7 @@ def fetch_stock_price(symbol):
         response = requests.get(alpha_vantage_url, timeout=RSS_FETCH_TIMEOUT)
         response.raise_for_status()
         data = response.json()
-        
+
         if "Global Quote" in data and "05. price" in data["Global Quote"]:
             price = data["Global Quote"]["05. price"]
             logging.info(f"Fetched price for {symbol} from Alpha Vantage: {price}")
@@ -167,6 +201,7 @@ def fetch_from_yahoo_finance(symbol: str) -> str:
     
     return "N/A"
 
+
 def fetch_image(url, width, height):
     """
     Fetches and resizes an image from the provided URL, returns a QPixmap object.
@@ -194,6 +229,7 @@ def fetch_image(url, width, height):
         logging.warning(f"Error fetching image from {url}: {e}. Falling back to default image.")
         return load_default_image(width, height)
 
+
 def load_default_image(width, height):
     """
     Loads the default image if fetching the image fails.
@@ -215,6 +251,7 @@ def load_default_image(width, height):
     except Exception as e:
         logging.error(f"Error loading default image: {e}")
         return None
+
 
 def sanitize_html(html_content):
     """

@@ -1,3 +1,18 @@
+"""
+threading.py
+
+This module provides utility functions for running tasks in the background using 
+concurrent threads. It utilizes the `ThreadPoolExecutor` to manage a pool of threads 
+for executing functions asynchronously, handling callbacks, and managing timeouts.
+
+Functions:
+    run_in_thread - Runs a specified function in a separate background thread.
+    run_with_callback - Runs a function in a thread and executes a callback upon completion.
+    run_with_exception_handling - Runs a function in a thread with exception handling.
+    run_in_thread_with_timeout - Runs a function in a thread with a timeout.
+    shutdown_executor - Shuts down the thread pool executor.
+"""
+
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
@@ -10,7 +25,7 @@ executor = ThreadPoolExecutor(max_workers=5)
 def _submit_task(target_func, *args, **kwargs):
     """
     A helper function to submit a task to the thread pool executor.
-    
+
     Args:
         target_func (function): The function to be executed in the background thread.
         *args: Positional arguments to pass to the target function.
@@ -47,7 +62,7 @@ def run_with_callback(target_func, callback_func=None, *args, **kwargs):
 
     Args:
         target_func (function): The function to execute in the thread.
-        callback_func (function): A function to call after target_func completes.
+        callback_func (function, optional): A function to call after target_func completes.
         *args: Positional arguments to pass to the target function.
         **kwargs: Keyword arguments to pass to the target function.
 

@@ -1,8 +1,22 @@
+"""
+feeds.py
+
+This module handles the loading and updating of RSS feeds for the StreamPulse application.
+It fetches the RSS feed content, displays news stories dynamically in the PyQt5 interface,
+and updates the UI in regular intervals.
+
+Functions:
+    load_feed_config - Loads RSS feed URLs from a configuration file.
+    load_feeds - Loads RSS feeds concurrently and updates the progress.
+    update_feed - Dynamically fetches and displays RSS feed content, updating every 10 seconds.
+"""
+
 import logging
-import time
 import json
+import os
 import queue
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtWidgets import QLabel
 from utils.threading import run_in_thread
 from api.fetchers import fetch_rss_feed, sanitize_html
 from api.sentiment import analyze_text
@@ -11,19 +25,24 @@ from ui.story_display import fade_in_story
 # Constants
 UPDATE_INTERVAL = 10000  # 10 seconds
 feed_queue = queue.Queue()  # Global queue for feed entries
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'rss_feeds.json')
 
+# Initialize logging
 logging.basicConfig(level=logging.INFO)
 
-def load_feed_config(config_file):
+def load_feed_config(config_file=None):
     """
-    Loads the RSS feed URLs from a JSON configuration file.
+    Loads the RSS feed URLs from a JSON configuration file. Defaults to 'rss_feeds.json'
+    in the 'ui' directory if no path is provided.
 
     Args:
-        config_file (str): Path to the configuration file.
+        config_file (str, optional): Path to the configuration file.
 
     Returns:
-        dict: A dictionary of categorized RSS feeds.
+        dict: A dictionary of categorized RSS feeds, or an empty dict if loading fails.
     """
+    config_file = config_file or DEFAULT_CONFIG_PATH
+
     try:
         with open(config_file, 'r') as file:
             rss_feeds = json.load(file)
@@ -33,45 +52,6 @@ def load_feed_config(config_file):
         logging.error(f"Error loading feed configuration: {e}")
         return {}
 
-def get_feeds_by_category(category, rss_feeds):
-    """
-    Returns the RSS feeds of a given category.
-
-    Args:
-        category (str): Category of the RSS feeds (e.g., "general", "financial").
-        rss_feeds (dict): A dictionary containing the categorized RSS feeds.
-
-    Returns:
-        list: List of RSS feed URLs for the specified category.
-    """
-    category = category.lower().strip()
-    if category in rss_feeds:
-        logging.info(f"Fetching feeds for category: {category}")
-        return rss_feeds[category]
-    else:
-        valid_categories = ", ".join(rss_feeds.keys())
-        logging.error(f"Invalid feed category '{category}'. Valid categories are: {valid_categories}")
-        return []
-
-def load_feeds_in_thread(feed, update_progress, total_feeds, loaded_feeds):
-    """
-    Loads a single feed in a separate thread and updates the progress.
-
-    Args:
-        feed (str): The RSS feed URL to be loaded.
-        update_progress (function): Function to update the progress bar.
-        total_feeds (int): Total number of feeds to be loaded.
-        loaded_feeds (list): Shared list to track the number of loaded feeds.
-    """
-    try:
-        time.sleep(0.5)  # Simulate network delay
-        loaded_feeds[0] += 1
-        progress = (loaded_feeds[0] / total_feeds) * 100
-        update_progress(progress)
-        logging.info(f"Loaded feed: {feed}")
-    except Exception as e:
-        logging.error(f"Error loading feed {feed}: {e}")
-
 def load_feeds(rss_feeds, update_progress):
     """
     Loads all feeds concurrently using threads and updates the progress bar.
@@ -79,13 +59,31 @@ def load_feeds(rss_feeds, update_progress):
     Args:
         rss_feeds (dict): Dictionary of RSS feeds.
         update_progress (function): Function to update the loading progress.
+
+    Returns:
+        dict: The RSS feeds for further use, or None if no feeds are available.
     """
+    if not rss_feeds:
+        logging.error("RSS feeds are None. Cannot load feeds.")
+        return None
+
     total_feeds = sum(len(feeds) for feeds in rss_feeds.values())
     loaded_feeds = [0]
 
+    def update_progress_callback(feed):
+        """
+        Callback to update progress bar after each feed is processed.
+        """
+        loaded_feeds[0] += 1
+        progress = (loaded_feeds[0] / total_feeds) * 100
+        update_progress(progress)
+
+    # Load feeds in separate threads using the fetch_rss_feed from fetchers.py
     for category, feeds in rss_feeds.items():
         for feed in feeds:
-            run_in_thread(load_feeds_in_thread, feed, update_progress, total_feeds, loaded_feeds)
+            run_in_thread(fetch_rss_feed, feed, update_progress_callback)
+
+    return rss_feeds
 
 def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
     """
@@ -94,20 +92,16 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
     Args:
         rss_feeds (list): A list of RSS feed URLs to fetch data from.
         content_frame (QWidget): The frame in the GUI where the feed content will be displayed.
-        root (QWidget): The root PyQt5 main window or parent widget.
+        root (QWidget): The main PyQt5 window or parent widget.
         category_name (str): The category name of the feed (e.g., 'General News').
         sentiment_frame (QWidget): A frame for displaying sentiment analysis results.
     """
-    feed_entries = []
-
     def fetch_feed_entries():
-        nonlocal feed_entries
         feed_entries = []
-        logging.debug(f"Fetching feeds for category: {category_name}")
+        logging.info(f"Fetching feeds for category: {category_name}")
 
         for feed_url in rss_feeds:
             try:
-                logging.debug(f"Fetching feed from URL: {feed_url}")
                 feed = fetch_rss_feed(feed_url)
                 if feed:
                     feed_entries.extend(feed.entries[:3])  # Limit to 3 stories per feed
@@ -128,7 +122,6 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
             if category == category_name and entries:
                 story = entries.pop(0)
                 description = sanitize_html(getattr(story, 'description', 'No description available'))
-                title = getattr(story, 'title', 'No title available')
 
                 try:
                     sentiment = analyze_text(description, model="llama3:latest")
@@ -137,7 +130,7 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
                     sentiment = 'Unknown'
 
                 fade_in_story(content_frame, story, sentiment_frame, sentiment)
-                entries.append(story)
+                entries.append(story)  # Cycle stories
             else:
                 display_placeholder_message(content_frame, "No stories available")
         except queue.Empty:
@@ -146,6 +139,13 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
             logging.debug(f"Scheduling next story display in {UPDATE_INTERVAL}ms for category: {category_name}")
 
     def display_placeholder_message(frame, message):
+        """
+        Displays a placeholder message in case no stories are available.
+
+        Args:
+            frame (QWidget): The content frame in which to display the message.
+            message (str): The message to display.
+        """
         for widget in frame.children():
             widget.deleteLater()  # Clear existing widgets
         label = QLabel(message, parent=frame)
@@ -153,17 +153,18 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
         label.setAlignment(Qt.AlignCenter)
         frame.layout().addWidget(label)
 
+    # Start fetching the feed entries in the background
     run_in_thread(fetch_feed_entries)
 
+    # Schedule updates to show the next story at regular intervals
     timer = QTimer(root)
     timer.timeout.connect(show_next_story)
     timer.start(UPDATE_INTERVAL)
 
-    def refresh_feed():
-        run_in_thread(fetch_feed_entries)
-
+    # Schedule feed refreshes periodically (e.g., every 5 minutes)
     refresh_timer = QTimer(root)
-    refresh_timer.timeout.connect(refresh_feed)
+    refresh_timer.timeout.connect(fetch_feed_entries)
     refresh_timer.start(UPDATE_INTERVAL * 30)
 
+    # Show the first story immediately
     show_next_story()

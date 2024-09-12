@@ -1,31 +1,39 @@
+"""
+loading_screen.py
+
+This module defines the LoadingScreen class, which is responsible for displaying a loading screen while
+the application fetches necessary data, such as RSS feeds and stock prices. It handles asynchronous
+data loading and communicates progress updates to the user interface using PyQt5.
+
+Key Features:
+- Displays a loading screen with progress feedback.
+- Loads RSS feeds and stock data asynchronously.
+- Provides smooth visual transitions using opacity effects.
+- Uses signals to communicate data loading progress.
+
+Classes:
+    LoadingScreen - Manages the display and behavior of the loading screen during data loading.
+"""
+
 import logging
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
 from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation
-from ui.feeds import load_feeds
-from api.fetchers import fetch_stock_price, STOCKS
+from ui.feeds import load_feeds, load_feed_config  # Use feeds.py's functions
+from api.fetchers import FetchStockData  # Use the class for fetching stock data
 from utils.threading import run_with_callback
 
 logging.basicConfig(level=logging.INFO)
 
+
 class LoadingScreen(QMainWindow):
     """
-    A loading screen that appears while data (e.g., news feeds and stock prices) is being fetched.
-    Displays a progress bar and status messages to the user, and smoothly transitions to the main
-    application window once loading is complete.
-    
-    Attributes:
-        progress_signal (pyqtSignal): Signal to update the progress bar and status label.
-        on_complete (function): Callback function to execute when data loading is complete.
+    LoadingScreen displays a loading screen while the application fetches necessary
+    RSS feeds and stock data. It handles asynchronous loading of data and communicates
+    progress back to the user interface.
     """
     progress_signal = pyqtSignal(float, str)
 
     def __init__(self, on_complete):
-        """
-        Initializes the loading screen, sets up the layout, and starts the loading process.
-
-        Args:
-            on_complete (function): The function to call when loading is complete.
-        """
         super().__init__()
         self.on_complete = on_complete
         self.setWindowTitle("Loading Data...")
@@ -61,7 +69,7 @@ class LoadingScreen(QMainWindow):
         """)
         layout.addWidget(self.status_label)
 
-        # Animated progress bar
+        # Progress bar
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setStyleSheet("""
@@ -88,6 +96,7 @@ class LoadingScreen(QMainWindow):
         self.fade_in_animation.setEndValue(1)
         self.fade_in_animation.start()
 
+        # Connect progress signals to update the UI
         self.progress_signal.connect(self.update_progress)
 
         # Start the loading process
@@ -95,11 +104,11 @@ class LoadingScreen(QMainWindow):
 
     def update_progress(self, progress, message=""):
         """
-        Updates the progress bar and status label based on the current progress of data loading.
+        Updates the progress bar and status message during the loading process.
 
         Args:
-            progress (float): The current progress (0-100%).
-            message (str): A status message describing the current stage of the loading process.
+            progress (float): The percentage of completion (0-100).
+            message (str): The status message to display.
         """
         capped_progress = min(progress, 100)
         logging.info(f"Progress: {capped_progress}% - Message: {message}")
@@ -112,68 +121,106 @@ class LoadingScreen(QMainWindow):
 
     def start_loading_data(self):
         """
-        Initiates the data loading process for news feeds and stock prices.
-        Calls the on_data_loaded callback once the data is fully loaded.
+        Initiates the loading of data by running the load_data_and_complete function in a background thread.
         """
         logging.info("Starting data loading process.")
         run_with_callback(self.load_data_and_complete, self.on_data_loaded)
 
     def load_data_and_complete(self):
         """
-        Handles the loading of both news feeds and stock data. Emits progress signals as the data
-        is fetched and updates the progress bar accordingly.
+        Loads RSS feeds and stock data, emits progress signals, and checks the completion of the loading process.
+
+        Returns:
+            dict: A dictionary containing 'rss_feeds' and 'stock_data' or None if loading fails.
         """
-        def feed_progress_update(current_feed_index, total_feeds):
-            progress = min(((current_feed_index + 1) / total_feeds) * 50, 50)
-            logging.info(f"Feed loading progress: {progress}% (Feed {current_feed_index + 1}/{total_feeds})")
+        # Load RSS feeds
+        rss_feeds = load_feed_config()
+        if not rss_feeds:
+            logging.error("Failed to load RSS feeds.")
+            return None
+
+        results = {"rss_feeds": None, "stock_data": None}
+        feed_loaded = [False]
+        stock_loaded = [False]
+
+        # Update progress for RSS feeds
+        def feed_progress_update(progress):
             self.progress_signal.emit(progress, f"Loading feeds... {int(progress)}%")
 
-        # Capture the feed data from load_feeds
-        feeds_data = load_feeds(None, lambda current_feed_index: feed_progress_update(current_feed_index, total_feeds=50))
-        if feeds_data is None:
-            logging.error("Feeds data is None. Failed to load feeds.")
-        else:
-            logging.info(f"Feeds data loaded: {len(feeds_data)} categories.")
+        # Handle completion of RSS feed loading
+        def on_feeds_loaded():
+            results["rss_feeds"] = rss_feeds
+            feed_loaded[0] = True
+            self.check_if_complete(results, feed_loaded, stock_loaded)
 
-        stock_data = self.load_stock_data()
+        load_feeds(rss_feeds, feed_progress_update)
+        on_feeds_loaded()
 
-        # Return feeds_data and stock_data as a tuple
-        return feeds_data, stock_data
+        # Load stock data asynchronously using FetchStockData class
+        stock_data_thread = FetchStockData()
+        stock_data_thread.progress_signal.connect(self.progress_signal.emit)
 
-    def load_stock_data(self):
+        # Handle completion of stock data loading
+        def on_stock_data_loaded():
+            stock_data_thread.wait()
+            # Fetch the actual stock data
+            if stock_data_thread.stock_data_signal:
+                results["stock_data"] = stock_data_thread.stock_data_signal
+            else:
+                logging.error("Failed to load stock data.")
+                results["stock_data"] = None
+            stock_loaded[0] = True
+            self.check_if_complete(results, feed_loaded, stock_loaded)
+
+        stock_data_thread.finished.connect(on_stock_data_loaded)
+        stock_data_thread.start()
+
+        return None  # Return None as this is asynchronous
+
+    def check_if_complete(self, results, feed_loaded, stock_loaded):
         """
-        Fetches stock price data and updates the progress bar. This process runs in parallel with 
-        the feed loading, with progress updates emitted as each stock price is fetched.
-        """
-        total_stocks = len(STOCKS)
-        for index, symbol in enumerate(STOCKS):
-            try:
-                fetch_stock_price(symbol)
-                progress = (index + 1) / total_stocks * 50
-                logging.info(f"Stock loading progress: {50 + progress}% for {symbol}")
-                self.progress_signal.emit(50 + progress, f"Fetching stock price for {symbol}...")
-            except Exception as e:
-                logging.error(f"Error fetching stock data for {symbol}: {e}")
-                self.progress_signal.emit(50 + (index + 1) / total_stocks * 50, f"Failed to fetch stock data for {symbol}...")
+        Checks if both RSS feeds and stock data have finished loading and returns the results.
 
-        # Signal that the loading is complete
-        self.progress_signal.emit(100, "Loading complete")
+        Args:
+            results (dict): The dictionary holding the loaded data.
+            feed_loaded (list): List indicating if the RSS feed loading is complete.
+            stock_loaded (list): List indicating if the stock data loading is complete.
+        """
+        if feed_loaded[0] and stock_loaded[0]:
+            if results["rss_feeds"] and results["stock_data"]:
+                self.progress_signal.emit(100, "Loading complete")
+                return results
+            else:
+                logging.error("Incomplete data loaded. Check RSS feeds or stock data.")
+                return None
 
     def on_data_loaded(self, future=None):
         """
-        Callback to be invoked when the data loading is complete. Closes the loading screen
-        and proceeds to the main application.
+        Callback triggered when data has finished loading. Transitions to the main application window.
 
         Args:
-            future (Future, optional): The Future object returned by the threading call.
+            future: The future object returned by the background task.
         """
         logging.info("Worker thread finished, transitioning to main window.")
-        self.close_loading_screen()
+        try:
+            if future:
+                data = future.result()
+            else:
+                data = self.load_data_and_complete()
+
+            if not data or not data["rss_feeds"] or not data["stock_data"]:
+                raise ValueError("Failed to load data.")
+
+            # Store feeds and stock data
+            self.feeds_data, self.stock_data = data["rss_feeds"], data["stock_data"]
+            self.close_loading_screen()
+
+        except Exception as e:
+            logging.error(f"Error processing loaded data: {e}", exc_info=True)
 
     def fade_out_and_close(self):
         """
-        Smooth fade-out animation before closing the loading screen and proceeding to the main
-        application window.
+        Fades out the loading screen and closes it.
         """
         self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
         self.fade_out_animation.setDuration(1000)
@@ -184,17 +231,17 @@ class LoadingScreen(QMainWindow):
 
     def close_loading_screen(self):
         """
-        Closes the loading screen and invokes the callback to load the main window.
+        Closes the loading screen and proceeds to the main application.
         """
         self.on_complete()
         self.close()
 
     def closeEvent(self, event):
         """
-        Handles the window close event to ensure all background threads are properly stopped.
+        Handles the close event of the loading screen window.
 
         Args:
-            event (QCloseEvent): The close event.
+            event: The close event.
         """
         logging.info("Closing loading screen.")
         event.accept()

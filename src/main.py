@@ -1,3 +1,19 @@
+"""
+main.py
+
+This is the entry point for the StreamPulse application. It initializes the application, 
+displays a loading screen while RSS feeds and stock data are fetched asynchronously, 
+and sets up the main application window once the data has been loaded successfully. 
+It also manages the cleanup of background threads upon closing the application.
+
+Classes:
+    StreamPulseApp - Manages the overall application logic, including loading data, 
+                     starting the main window, and handling background threads.
+                     
+Functions:
+    main - Initializes and starts the PyQt application.
+"""
+
 import sys
 import logging
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
@@ -9,7 +25,17 @@ from utils.threading import shutdown_executor, run_with_callback  # Use the new 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting StreamPulse application...")
 
+
 class StreamPulseApp(QMainWindow):
+    """
+    StreamPulseApp is the main class that manages the loading screen, 
+    fetching of data, and initializing the main application window.
+    
+    Attributes:
+        feeds_data (dict): Loaded RSS feed data.
+        stock_data (dict): Loaded stock price data.
+        threads_running (bool): Tracks whether threads are active.
+    """
     def __init__(self):
         super().__init__()
         self.setWindowTitle("StreamPulse - Dynamic News Display")
@@ -30,8 +56,11 @@ class StreamPulseApp(QMainWindow):
 
     def start_application(self, future=None):
         """
-        Initialize the main application window once the news feeds have finished loading.
-        This function sets up the main frame of the application.
+        Initialize the main application window once the news feeds and stock data 
+        have finished loading. This function sets up the main frame of the application.
+
+        Args:
+            future: The future object returned from the background loading task.
         """
         logging.info("News feeds loaded, starting the main application.")
         try:
@@ -41,10 +70,11 @@ class StreamPulseApp(QMainWindow):
             self.repaint()  # Force repaint after loading
         except Exception as e:
             logging.error(f"Error occurred while starting the main application: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", "Failed to start the application. Please try again.")
 
     def load_with_loading_screen(self):
         """
-        Display a loading screen while asynchronously fetching the news feeds.
+        Display a loading screen while asynchronously fetching the news feeds and stock data.
         """
         logging.info("Displaying loading screen and starting feed loading process.")
         try:
@@ -57,17 +87,30 @@ class StreamPulseApp(QMainWindow):
 
         except Exception as e:
             logging.error(f"Error occurred during loading process: {e}", exc_info=True)
+            QMessageBox.critical(self, "Loading Error", "An error occurred while loading data. Please restart the application.")
 
     def on_data_loaded(self, future):
-        """Callback after data has loaded."""
-        try:
-            # Extract feeds and stock data from the loading screen's future
-            self.feeds_data, self.stock_data = future.result()
+        """
+        Callback after data has loaded. It checks the validity of the loaded data 
+        and proceeds with starting the main application.
 
-            # Check if feeds_data or stock_data is None before proceeding
+        Args:
+            future: The future object containing the loaded data.
+        """
+        logging.info("Data loading complete, processing data.")
+        try:
+            # Extract data from the future result, and check if it's valid
+            result = future.result()
+            if result is None or not isinstance(result, dict):
+                raise ValueError("No data was loaded or invalid data format.")
+            
+            self.feeds_data = result.get("rss_feeds", None)
+            self.stock_data = result.get("stock_data", None)
+
+            # Ensure both data sources are loaded
             if self.feeds_data is None or self.stock_data is None:
                 logging.error("Failed to load feeds or stock data.")
-                # You can display an error message to the user here
+                QMessageBox.critical(self, "Data Error", "Failed to load feeds or stock data. Please check the configuration.")
                 return
 
             # Start the main application
@@ -75,9 +118,16 @@ class StreamPulseApp(QMainWindow):
 
         except Exception as e:
             logging.error(f"Error processing loaded data: {e}", exc_info=True)
+            QMessageBox.critical(self, "Data Processing Error", "An error occurred while processing loaded data. Please restart the application.")
 
     def on_close(self, event):
-        """Cleanup function to ensure proper shutdown of background threads."""
+        """
+        Cleanup function to ensure proper shutdown of background threads and resources
+        when the application is closed.
+
+        Args:
+            event: The close event triggered when the user attempts to close the application.
+        """
         reply = QMessageBox.question(self, 'Confirmation',
                                      'Are you sure you want to quit?',
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -108,6 +158,7 @@ class StreamPulseApp(QMainWindow):
         # Flag that all threads have completed
         self.threads_running = False
         logging.info("All threads have completed.")
+
 
 # Main entry point for the application
 if __name__ == "__main__":

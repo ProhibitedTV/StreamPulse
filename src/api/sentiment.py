@@ -1,6 +1,21 @@
+"""
+sentiment.py
+
+This module is responsible for performing sentiment analysis using a local Ollama instance.
+It includes functions to fetch available models, perform sentiment analysis, and update a 
+PyQt5-based user interface (UI) with the results. The module handles errors gracefully, logs 
+actions and issues, and provides feedback using a text-to-speech (TTS) engine.
+
+Functions:
+    list_models - Fetches and returns a list of available models from Ollama.
+    analyze_text - Sends a sentiment analysis request to Ollama and updates the UI with the result.
+    update_ui - Ensures the PyQt5 UI is updated to reflect sentiment analysis results.
+"""
+
 import requests
 import logging
-from api.tts_engine import add_to_tts_queue
+from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
+from api.tts_engine import add_to_tts_queue  # Import for TTS notifications
 
 # Initialize logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -9,13 +24,13 @@ def list_models():
     """
     Fetches and returns a list of available models from the local Ollama instance.
     
-    Handles connection errors, timeouts, and other issues gracefully, and logs 
+    Handles connection errors, timeouts, and other issues gracefully, logging 
     all relevant actions and errors.
-    
+
     :return: A list of model names or 'error' if an issue occurs.
     """
     url = "http://localhost:11434/api/tags"
-    
+
     try:
         logging.info("Attempting to fetch available models from Ollama...")
         response = requests.get(url)
@@ -49,13 +64,14 @@ def list_models():
         add_to_tts_queue("Unexpected error occurred while fetching models.")
         return "error"
 
+
 def analyze_text(text, root, label, model="llama3:latest", prompt_template="Analyze the sentiment: {text}", stream=False):
     """
-    Send a request to the local Ollama instance for text sentiment analysis and update the UI.
+    Sends a request to the local Ollama instance for text sentiment analysis and updates the PyQt5 UI.
 
     :param text: The input text for analysis.
-    :param root: The root Tkinter instance, used to update the UI on the main thread.
-    :param label: The Tkinter label where the sentiment result will be displayed.
+    :param root: The PyQt5 root QWidget instance, used to update the UI.
+    :param label: The PyQt5 QLabel widget where the sentiment result will be displayed.
     :param model: The model to use for analysis (default is 'llama3:latest').
     :param prompt_template: The prompt template to send to the model.
     :param stream: Boolean indicating if streaming mode should be enabled. Default is False.
@@ -97,7 +113,7 @@ def analyze_text(text, root, label, model="llama3:latest", prompt_template="Anal
         logging.info(f"Sentiment analysis result: {result}")
         add_to_tts_queue(f"Sentiment analysis result: {result}")
         
-        # Update the UI with the result on the main thread
+        # Update the UI with the result
         update_ui(root, label, f"Sentiment analysis result: {result}")
         return result
 
@@ -129,12 +145,17 @@ def analyze_text(text, root, label, model="llama3:latest", prompt_template="Anal
         update_ui(root, label, error_message)
         return "error"
 
+
 def update_ui(root, label, text):
     """
-    Ensures that the UI is updated in the main thread to avoid Tkinter threading issues.
-    
-    :param root: The Tkinter root object.
-    :param label: The label widget to be updated with the result text.
-    :param text: The text to display in the label.
+    Ensures that the PyQt5 UI is updated with the sentiment result.
+
+    PyQt5 operates with event loops, so we need to ensure that UI updates occur 
+    within the main thread using QMetaObject.invokeMethod to safely update widgets 
+    outside the thread performing the sentiment analysis.
+
+    :param root: The PyQt5 parent QWidget object.
+    :param label: The QLabel widget where the result will be displayed.
+    :param text: The text to display in the QLabel.
     """
-    root.after(0, lambda: label.config(text=text))
+    QMetaObject.invokeMethod(label, "setText", Q_ARG(str, text))
