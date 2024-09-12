@@ -1,6 +1,5 @@
-import threading
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -8,9 +7,28 @@ logging.basicConfig(level=logging.INFO)
 # Thread pool executor to reuse threads
 executor = ThreadPoolExecutor(max_workers=5)
 
+def _submit_task(target_func, *args, **kwargs):
+    """
+    A helper function to submit a task to the thread pool executor.
+    
+    Args:
+        target_func (function): The function to be executed in the background thread.
+        *args: Positional arguments to pass to the target function.
+        **kwargs: Keyword arguments to pass to the target function.
+
+    Returns:
+        Future: A Future object representing the execution of the function.
+    """
+    try:
+        return executor.submit(target_func, *args, **kwargs)
+    except Exception as e:
+        logging.error(f"Failed to submit task: {e}", exc_info=True)
+        return None
+
 def run_in_thread(target_func, *args, **kwargs):
     """
     Runs the specified function in a separate background thread using ThreadPoolExecutor.
+    Returns a Future object.
 
     Args:
         target_func (function): The function to be executed in the background thread.
@@ -20,7 +38,8 @@ def run_in_thread(target_func, *args, **kwargs):
     Returns:
         Future: A Future object representing the execution of the function.
     """
-    return executor.submit(target_func, *args, **kwargs)
+    logging.debug(f"Running function '{target_func.__name__}' in a new thread.")
+    return _submit_task(target_func, *args, **kwargs)
 
 def run_with_callback(target_func, callback_func=None, *args, **kwargs):
     """
@@ -35,12 +54,9 @@ def run_with_callback(target_func, callback_func=None, *args, **kwargs):
     Returns:
         Future: A Future object representing the execution of the function.
     """
-    future = executor.submit(target_func, *args, **kwargs)
-    
-    # Define the callback function to be called upon completion
-    if callback_func:
+    future = _submit_task(target_func, *args, **kwargs)
+    if future and callback_func:
         future.add_done_callback(lambda fut: callback_func(fut.result()))
-    
     return future
 
 def run_with_exception_handling(target_func, *args, **kwargs):
@@ -57,11 +73,12 @@ def run_with_exception_handling(target_func, *args, **kwargs):
     """
     def wrapper(*args, **kwargs):
         try:
+            logging.debug(f"Running function '{target_func.__name__}' with exception handling.")
             return target_func(*args, **kwargs)
         except Exception as e:
-            logging.error(f"An error occurred in thread: {e}", exc_info=True)
+            logging.error(f"An error occurred in thread '{target_func.__name__}': {e}", exc_info=True)
 
-    return executor.submit(wrapper, *args, **kwargs)
+    return _submit_task(wrapper, *args, **kwargs)
 
 def run_in_thread_with_timeout(target_func, timeout, *args, **kwargs):
     """
@@ -77,18 +94,29 @@ def run_in_thread_with_timeout(target_func, timeout, *args, **kwargs):
         Future: A Future object representing the execution of the function.
         If the timeout is reached, the result will be None.
     """
-    future = executor.submit(target_func, *args, **kwargs)
+    future = _submit_task(target_func, *args, **kwargs)
+    
+    if not future:
+        return None
     
     try:
         result = future.result(timeout=timeout)
         return result
+    except TimeoutError:
+        logging.error(f"Thread execution timed out after {timeout} seconds for function '{target_func.__name__}'.")
     except Exception as e:
-        logging.error(f"Thread execution timed out or error occurred: {e}", exc_info=True)
-        return None
+        logging.error(f"Error occurred while running function '{target_func.__name__}': {e}", exc_info=True)
+    
+    return None
 
-def shutdown_executor():
+def shutdown_executor(wait=True):
     """
     Shuts down the thread pool executor gracefully, ensuring no new tasks are scheduled and existing tasks are completed.
+
+    Args:
+        wait (bool): If True, wait for tasks to complete before shutting down.
+                     If False, the executor will attempt to shutdown immediately.
     """
     logging.info("Shutting down thread pool executor.")
-    executor.shutdown(wait=False)
+    executor.shutdown(wait=wait)
+    logging.info("Thread pool executor has been shut down.")

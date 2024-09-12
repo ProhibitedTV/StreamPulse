@@ -20,24 +20,34 @@ def fetch_us_debt():
     """
     try:
         logging.info("Fetching U.S. National Debt data...")
-        url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/mspd/mspd_debt"
-        response = requests.get(url)
+        url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny"
+        params = {
+            "fields": "tot_pub_debt_out_amt,record_date",
+            "sort": "-record_date",
+            "page[number]": 1,
+            "page[size]": 1
+        }
+        response = requests.get(url, params=params, timeout=10)  # Added a timeout for safety
         response.raise_for_status()
         data = response.json()
 
+        # Add detailed logging for API response
+        logging.debug(f"U.S. National Debt API response: {data}")
+
         if 'data' in data and len(data['data']) > 0:
             latest_debt = data['data'][0]['tot_pub_debt_out_amt']
-            debt_formatted = f"${float(latest_debt):,.2f}"
+            record_date = data['data'][0]['record_date']
+            debt_formatted = f"${float(latest_debt):,.2f} (As of {record_date})"
             logging.info(f"Fetched U.S. National Debt: {debt_formatted}")
             return debt_formatted
         else:
-            logging.error("Debt data unavailable in the response.")
+            logging.error("Debt data unavailable in the API response structure.")
             return "Data Unavailable"
 
     except requests.exceptions.RequestException as e:
         logging.error(f"Error fetching U.S. national debt: {e}")
         return "Data Unavailable"
-
+    
 
 def fetch_global_co2_emissions():
     """
@@ -49,9 +59,12 @@ def fetch_global_co2_emissions():
     try:
         logging.info("Fetching global CO2 emissions data...")
         url = "https://api.worldbank.org/v2/country/WLD/indicator/EN.ATM.CO2E.KT?format=json"
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
+
+        # Log the full response for debugging
+        logging.debug(f"World Bank CO2 API full response: {data}")
 
         if response.status_code == 200 and len(data) > 1 and 'value' in data[1][0]:
             co2 = data[1][0]['value']
@@ -59,10 +72,10 @@ def fetch_global_co2_emissions():
             logging.info(f"Fetched Global CO2 Emissions: {co2_formatted}")
             return co2_formatted
         else:
-            logging.error("CO2 emissions data unavailable in the response.")
+            logging.error("CO2 emissions data unavailable in the response or malformed.")
             return "Data Unavailable"
 
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         logging.error(f"Error fetching global CO2 emissions: {e}")
         return "Data Unavailable"
 
@@ -160,26 +173,16 @@ def create_world_clock_widget():
 
     def update_time():
         """Updates the time for each city."""
-        if not world_clock_widget.isVisible():
-            logging.warning("World clock widget is not visible. Stopping clock updates.")
-            return
-
         now_utc = datetime.now(pytz.utc)
         for city, tz in cities.items():
             local_time = now_utc.astimezone(timezone(tz))
             time_string = local_time.strftime('%Y-%m-%d %H:%M:%S') if time_format_24hr else local_time.strftime('%Y-%m-%d %I:%M:%S %p')
 
-            logging.debug(f"Attempting to update time for {city}: {time_string}")
+            logging.debug(f"Updating time for {city}: {time_string}")
 
             # Ensure the QLabel still exists and is visible
-            if city in time_labels and time_labels[city] is not None and time_labels[city].isVisible():
-                try:
-                    time_labels[city].setText(f"{city}: {time_string}")
-                    logging.debug(f"Updated time for {city}: {time_string}")
-                except RuntimeError as e:
-                    logging.error(f"Error updating time label for {city}: {e}")
-            else:
-                logging.warning(f"Label for {city} is not visible, deleted, or doesn't exist.")
+            if city in time_labels and time_labels[city].isVisible():
+                time_labels[city].setText(f"{city}: {time_string}")
 
         # Refresh the time every second
         QTimer.singleShot(1000, update_time)

@@ -60,16 +60,23 @@ class FetchRSSFeeds(QThread):
 
 class FetchStockData(QThread):
     progress_signal = pyqtSignal(int, str)  # Signal to update progress
+    stock_data_signal = pyqtSignal(str)     # Signal to pass stock data
 
     def run(self):
         """
         Run the stock data fetching in a background thread and emit progress signals.
         """
+        stock_prices = []
         total_stocks = len(STOCKS)
+
         for index, symbol in enumerate(STOCKS):
-            fetch_stock_price(symbol)
+            price = fetch_stock_price(symbol)
+            stock_prices.append(f"{symbol}: ${price}")
             progress = 50 + ((index + 1) / total_stocks) * 50  # Stocks account for the remaining 50%
             self.progress_signal.emit(int(progress), f"Fetching stock price for {symbol}")
+
+        stock_text = "  |  ".join(stock_prices)  # Format stock prices into a single string
+        self.stock_data_signal.emit(stock_text)  # Emit the formatted stock data
         self.progress_signal.emit(100, "Finished loading stocks")  # 100% done
 
 

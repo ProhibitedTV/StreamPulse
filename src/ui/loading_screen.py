@@ -2,7 +2,7 @@ import os
 import logging
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QPropertyAnimation
-from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtGui import QPixmap
 from ui.feeds import load_feeds
 from api.fetchers import fetch_stock_price, STOCKS
 
@@ -91,6 +91,10 @@ class LoadingScreen(QMainWindow):
         self.progress_signal.connect(self.update_progress)
         self.worker = DataLoadingWorker(self.progress_signal)
 
+        # Ensure proper worker termination before transitioning
+        self.worker.finished.connect(self.worker_finished)
+
+        logging.info("Starting loading screen initialization.")
         self.start_loading_data()
 
     def update_progress(self, progress, message=""):
@@ -101,16 +105,15 @@ class LoadingScreen(QMainWindow):
 
         if capped_progress == 100:
             logging.info("Data loading complete, closing loading screen.")
-            self.worker.quit()
-            self.worker.wait()  # Ensure the worker has stopped
             self.fade_out_and_close()  # Smoothly transition out of the loading screen
 
     def start_loading_data(self):
-        logging.info("Starting data loading process.")
+        logging.info("Starting data loading process in worker thread.")
         self.worker.start()
 
     def fade_out_and_close(self):
         """Smooth fade-out animation before closing the loading screen."""
+        logging.info("Starting fade-out animation.")
         self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
         self.fade_out_animation.setDuration(1000)
         self.fade_out_animation.setStartValue(1)
@@ -118,15 +121,31 @@ class LoadingScreen(QMainWindow):
         self.fade_out_animation.finished.connect(self.close_loading_screen)
         self.fade_out_animation.start()
 
-    def close_loading_screen(self):
-        self.close()  # Close the loading screen
-        self.on_complete()  # Load the main application window
+    def worker_finished(self):
+        """Ensure the worker thread is properly finished before transitioning."""
+        logging.info("Worker thread finished, transitioning to main window.")
+        self.close_loading_screen()
 
-    def closeEvent(self, event):
-        logging.info("Closing loading screen and stopping worker.")
+    def close_loading_screen(self):
+        """Close the loading screen and proceed to main application."""
+        logging.info("Closing loading screen.")
         if self.worker.isRunning():
+            logging.info("Waiting for worker thread to finish.")
             self.worker.quit()
             self.worker.wait()
+            logging.info("Worker thread has stopped.")
+
+        self.on_complete()  # Proceed to load the main window
+        self.close()
+
+    def closeEvent(self, event):
+        """Ensure the worker is stopped when the window is closed."""
+        logging.info("Closing loading screen and stopping worker.")
+        if self.worker.isRunning():
+            logging.info("Stopping worker thread...")
+            self.worker.quit()
+            self.worker.wait()  # Ensure the thread has finished
+            logging.info("Worker thread has stopped.")
         event.accept()
 
 
@@ -136,6 +155,7 @@ class DataLoadingWorker(QThread):
         self.progress_signal = progress_signal
 
     def run(self):
+        logging.info("Worker thread started.")
         try:
             self.load_data_and_close()
         except Exception as e:
@@ -154,6 +174,7 @@ class DataLoadingWorker(QThread):
                 self.progress_signal.emit(50 + (index + 1) / total_stocks * 50, f"Failed to fetch stock data for {symbol}...")
 
     def load_data_and_close(self):
+        logging.info("Loading feeds and stocks.")
         self.progress_signal.emit(0, "Loading news feeds...")
 
         def feed_progress_update(current_feed_index, total_feeds):
@@ -164,3 +185,4 @@ class DataLoadingWorker(QThread):
         load_feeds(None, lambda current_feed_index: feed_progress_update(current_feed_index, total_feeds=50))
         self.load_stock_data()
         self.progress_signal.emit(100, "Loading complete")
+        logging.info("Data loading complete.")
