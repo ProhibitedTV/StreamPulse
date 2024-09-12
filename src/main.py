@@ -3,7 +3,7 @@ import logging
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
 from ui.loading_screen import LoadingScreen  # Import the LoadingScreen class
 from ui.gui import setup_main_frame
-from utils.threading import shutdown_executor
+from utils.threading import shutdown_executor, run_with_callback  # Use the new threading module
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,21 +18,25 @@ class StreamPulseApp(QMainWindow):
         # Initialize a flag to track if threads are running
         self.threads_running = True
 
+        # Placeholder for loaded data
+        self.feeds_data = None
+        self.stock_data = None
+
         # Call loading screen logic
         self.load_with_loading_screen()
 
         # Set close event handling
         self.closeEvent = self.on_close
 
-    def start_application(self):
+    def start_application(self, future=None):
         """
         Initialize the main application window once the news feeds have finished loading.
         This function sets up the main frame of the application.
         """
         logging.info("News feeds loaded, starting the main application.")
         try:
-            setup_main_frame(self)  # Setup main UI components after loading is complete
-            logging.debug("Main frame setup complete, showing full screen.")
+            # Pass the loaded feeds_data and stock_data to the main frame setup
+            setup_main_frame(self, self.feeds_data, self.stock_data)
             self.showFullScreen()  # Ensure the main window is in full-screen mode after the setup
             self.repaint()  # Force repaint after loading
         except Exception as e:
@@ -44,16 +48,36 @@ class StreamPulseApp(QMainWindow):
         """
         logging.info("Displaying loading screen and starting feed loading process.")
         try:
-            # Show loading screen and start loading feeds in the background
+            # Show loading screen and start loading feeds in the background using threading.py
             self.loading_screen = LoadingScreen(self.start_application)
             self.loading_screen.show()
-            logging.debug("Loading screen displayed successfully.")
+
+            # Use the run_with_callback to handle background loading and trigger start_application after completion
+            run_with_callback(self.loading_screen.start_loading_data, self.on_data_loaded)
+
         except Exception as e:
             logging.error(f"Error occurred during loading process: {e}", exc_info=True)
 
+    def on_data_loaded(self, future):
+        """Callback after data has loaded."""
+        try:
+            # Extract feeds and stock data from the loading screen's future
+            self.feeds_data, self.stock_data = future.result()
+
+            # Check if feeds_data or stock_data is None before proceeding
+            if self.feeds_data is None or self.stock_data is None:
+                logging.error("Failed to load feeds or stock data.")
+                # You can display an error message to the user here
+                return
+
+            # Start the main application
+            self.start_application()
+
+        except Exception as e:
+            logging.error(f"Error processing loaded data: {e}", exc_info=True)
+
     def on_close(self, event):
         """Cleanup function to ensure proper shutdown of background threads."""
-        logging.debug("Attempting to close the application.")
         reply = QMessageBox.question(self, 'Confirmation',
                                      'Are you sure you want to quit?',
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -68,7 +92,6 @@ class StreamPulseApp(QMainWindow):
 
             event.accept()
         else:
-            logging.info("Close event canceled by user.")
             event.ignore()
 
     def close_all_threads(self):
@@ -78,11 +101,9 @@ class StreamPulseApp(QMainWindow):
         logging.info("Waiting for all threads to complete...")
 
         if self.threads_running:
-            if hasattr(self, 'loading_screen') and self.loading_screen.worker.isRunning():
-                logging.info("Stopping the loading screen worker thread...")
-                self.loading_screen.worker.quit()
-                self.loading_screen.worker.wait()
-                logging.info("Loading screen worker thread has stopped.")
+            if hasattr(self, 'loading_screen'):
+                logging.info("Closing the loading screen if still open.")
+                self.loading_screen.close()
 
         # Flag that all threads have completed
         self.threads_running = False

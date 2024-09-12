@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip
+RUN pip install --upgrade pip
+
 # Install dependencies early to utilize Docker layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

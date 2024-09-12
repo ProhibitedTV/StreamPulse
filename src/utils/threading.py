@@ -54,9 +54,12 @@ def run_with_callback(target_func, callback_func=None, *args, **kwargs):
     Returns:
         Future: A Future object representing the execution of the function.
     """
-    future = _submit_task(target_func, *args, **kwargs)
-    if future and callback_func:
-        future.add_done_callback(lambda fut: callback_func(fut.result()))
+    future = executor.submit(target_func, *args, **kwargs)
+    
+    # Define the callback function to be called upon completion
+    if callback_func:
+        future.add_done_callback(lambda fut: callback_func(fut))
+    
     return future
 
 def run_with_exception_handling(target_func, *args, **kwargs):

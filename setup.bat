@@ -26,11 +26,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Upgrade pip and setup tools
-echo Upgrading pip, setuptools, and wheel...
-pip install --upgrade pip setuptools wheel
+:: Upgrade pip
+echo Upgrading pip...
+pip install --upgrade pip
 if errorlevel 1 (
-    echo Failed to upgrade pip and setuptools.
+    echo Failed to upgrade pip.
+    exit /b 1
+)
+
+:: Upgrade setuptools and wheel
+echo Upgrading setuptools and wheel...
+pip install --upgrade setuptools wheel
+if errorlevel 1 (
+    echo Failed to upgrade setuptools and wheel.
     exit /b 1
 )
 

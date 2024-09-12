@@ -1,128 +1,169 @@
 import logging
 import time
+import json
+import queue
+from PyQt5.QtCore import QTimer
 from utils.threading import run_in_thread
+from api.fetchers import fetch_rss_feed, sanitize_html
+from api.sentiment import analyze_text
+from ui.story_display import fade_in_story
 
-# Logger for error tracking
+# Constants
+UPDATE_INTERVAL = 10000  # 10 seconds
+feed_queue = queue.Queue()  # Global queue for feed entries
+
 logging.basicConfig(level=logging.INFO)
 
-# Feed structure using a dictionary to categorize
-RSS_FEEDS = {
-    "general": [
-        "http://rss.cnn.com/rss/edition_americas.rss",  
-        "http://feeds.bbci.co.uk/news/world/rss.xml",  
-        "https://www.npr.org/rss/rss.php?id=1001",  
-        "https://feeds.washingtonpost.com/rss/world",  
-        "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",  
-        "https://www.theguardian.com/world/rss",  
-        "https://news.un.org/feed/subscribe/en/news/all/rss.xml",  
-        "https://www.aljazeera.com/xml/rss/all.xml",  
-        "https://www.france24.com/en/rss",  
-        "https://feeds.thelocal.com/rss/es"  
-    ],
-    "financial": [
-        "https://www.investing.com/rss/news_25.rss",  
-        "https://feeds.marketwatch.com/marketwatch/topstories",  
-        "https://seekingalpha.com/feed.xml",  
-        "https://www.fool.com/feeds/index.aspx",  
-        "https://www.cnbc.com/id/100003114/device/rss/rss.html",  
-        "https://www.kiplinger.com/feed/all",  
-        "https://www.bloomberg.com/feed/podcast/trillions.xml",  
-        "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",  
-        "https://www.moneycontrol.com/rss/latestnews.xml",  
-    ],
-    "video_games": [
-        "https://kotaku.com/rss",  
-        "https://feeds.feedburner.com/Polygon",  
-        "https://www.theverge.com/rss/frontpage",  
-        "https://www.pcgamer.com/rss/",  
-        "https://www.gamespot.com/feeds/news/",  
-        "https://feeds.feedburner.com/RockPaperShotgun",  
-        "https://www.eurogamer.net/?format=rss",  
-        "https://www.reddit.com/r/gaming.rss",  
-    ],
-    "science_tech": [
-        "https://techcrunch.com/feed/",  
-        "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",  
-        "https://www.nasa.gov/rss/dyn/breaking_news.rss",  
-        "https://www.tomshardware.com/feeds/all",  
-        "https://www.wired.com/feed/rss",  
-        "https://feeds.arstechnica.com/arstechnica/index/",  
-        "https://www.engadget.com/rss.xml",  
-        "https://www.newscientist.com/subject/space/feed/",  
-    ],
-    "health_environment": [
-        "https://www.who.int/feeds/entity/csr/don/en/rss.xml",  
-        "https://feeds.washingtonpost.com/rss/lifestyle/wellness",  
-        "https://www.npr.org/rss/rss.php?id=1027",  
-        "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",  
-        "https://www.nationalgeographic.com/content/natgeo/en_us/rss/index.rss",  
-        "https://www.climatechangenews.com/feed/",  
-        "https://feeds.feedburner.com/theecologist",  
-        "https://www.bbc.co.uk/news/science_and_environment/rss.xml",  
-    ],
-    "entertainment": [
-        "https://variety.com/feed/",  
-        "https://feeds.feedburner.com/ewallstreeter",  
-        "https://www.tmz.com/rss.xml",  
-        "https://www.hollywoodreporter.com/t/entertainment/feed/",  
-        "https://rss.etonline.com/latest",  
-        "https://www.vanityfair.com/feed/rss",  
-        "https://www.billboard.com/feed",  
-        "https://feeds.feedburner.com/slashfilm",  
-        "https://www.reddit.com/r/movies.rss",  
-    ]
-}
+def load_feed_config(config_file):
+    """
+    Loads the RSS feed URLs from a JSON configuration file.
 
-def get_feeds_by_category(category):
-    """
-    Returns the RSS feeds of a given category. Logs an error if the category is not found.
-    
     Args:
-        category (str): Category of the RSS feeds ("general", "financial", etc.). Case-insensitive.
-    
+        config_file (str): Path to the configuration file.
+
     Returns:
-        list: List of RSS feed URLs for the category, or an empty list if the category is invalid.
+        dict: A dictionary of categorized RSS feeds.
     """
-    category = category.lower().strip()  # Ensure case-insensitivity and trim spaces
-    if category in RSS_FEEDS:
+    try:
+        with open(config_file, 'r') as file:
+            rss_feeds = json.load(file)
+            logging.info(f"Loaded RSS feed configuration from {config_file}.")
+            return rss_feeds
+    except Exception as e:
+        logging.error(f"Error loading feed configuration: {e}")
+        return {}
+
+def get_feeds_by_category(category, rss_feeds):
+    """
+    Returns the RSS feeds of a given category.
+
+    Args:
+        category (str): Category of the RSS feeds (e.g., "general", "financial").
+        rss_feeds (dict): A dictionary containing the categorized RSS feeds.
+
+    Returns:
+        list: List of RSS feed URLs for the specified category.
+    """
+    category = category.lower().strip()
+    if category in rss_feeds:
         logging.info(f"Fetching feeds for category: {category}")
-        return RSS_FEEDS[category]
+        return rss_feeds[category]
     else:
-        valid_categories = ", ".join(RSS_FEEDS.keys())
+        valid_categories = ", ".join(rss_feeds.keys())
         logging.error(f"Invalid feed category '{category}'. Valid categories are: {valid_categories}")
         return []
 
 def load_feeds_in_thread(feed, update_progress, total_feeds, loaded_feeds):
     """
-    Loads a single feed in a separate thread, simulating network delay, and updates the progress.
+    Loads a single feed in a separate thread and updates the progress.
 
     Args:
         feed (str): The RSS feed URL to be loaded.
         update_progress (function): Function to update the progress bar.
-        total_feeds (int): The total number of feeds to be loaded.
-        loaded_feeds (list): A shared list to keep track of the number of loaded feeds.
+        total_feeds (int): Total number of feeds to be loaded.
+        loaded_feeds (list): Shared list to track the number of loaded feeds.
     """
     try:
         time.sleep(0.5)  # Simulate network delay
         loaded_feeds[0] += 1
         progress = (loaded_feeds[0] / total_feeds) * 100
-        update_progress(progress)  # Update progress bar
+        update_progress(progress)
         logging.info(f"Loaded feed: {feed}")
     except Exception as e:
         logging.error(f"Error loading feed {feed}: {e}")
 
-def load_feeds(main_frame, update_progress):
+def load_feeds(rss_feeds, update_progress):
     """
-    Loads all feeds concurrently using threads and updates the progress bar accordingly.
-    
+    Loads all feeds concurrently using threads and updates the progress bar.
+
     Args:
-        main_frame: The main frame where the feed content will be displayed.
+        rss_feeds (dict): Dictionary of RSS feeds.
         update_progress (function): Function to update the loading progress.
     """
-    total_feeds = sum(len(feeds) for feeds in RSS_FEEDS.values())
-    loaded_feeds = [0]  # Use a list to store the count of loaded feeds, so it can be updated by threads
+    total_feeds = sum(len(feeds) for feeds in rss_feeds.values())
+    loaded_feeds = [0]
 
-    for category, feeds in RSS_FEEDS.items():
+    for category, feeds in rss_feeds.items():
         for feed in feeds:
-            # Start loading each feed in a separate thread
             run_in_thread(load_feeds_in_thread, feed, update_progress, total_feeds, loaded_feeds)
+
+def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
+    """
+    Fetch and display RSS feed content dynamically, updating every 10 seconds.
+
+    Args:
+        rss_feeds (list): A list of RSS feed URLs to fetch data from.
+        content_frame (QWidget): The frame in the GUI where the feed content will be displayed.
+        root (QWidget): The root PyQt5 main window or parent widget.
+        category_name (str): The category name of the feed (e.g., 'General News').
+        sentiment_frame (QWidget): A frame for displaying sentiment analysis results.
+    """
+    feed_entries = []
+
+    def fetch_feed_entries():
+        nonlocal feed_entries
+        feed_entries = []
+        logging.debug(f"Fetching feeds for category: {category_name}")
+
+        for feed_url in rss_feeds:
+            try:
+                logging.debug(f"Fetching feed from URL: {feed_url}")
+                feed = fetch_rss_feed(feed_url)
+                if feed:
+                    feed_entries.extend(feed.entries[:3])  # Limit to 3 stories per feed
+                else:
+                    logging.warning(f"No feed found at {feed_url}")
+            except Exception as e:
+                logging.error(f"Error fetching feed from {feed_url}: {e}")
+
+        if not feed_entries:
+            logging.warning(f"No entries retrieved for category: {category_name}")
+            display_placeholder_message(content_frame, "No stories available")
+        else:
+            feed_queue.put((category_name, feed_entries))
+
+    def show_next_story():
+        try:
+            category, entries = feed_queue.get_nowait()
+            if category == category_name and entries:
+                story = entries.pop(0)
+                description = sanitize_html(getattr(story, 'description', 'No description available'))
+                title = getattr(story, 'title', 'No title available')
+
+                try:
+                    sentiment = analyze_text(description, model="llama3:latest")
+                except Exception as e:
+                    logging.error(f"Sentiment analysis failed: {e}")
+                    sentiment = 'Unknown'
+
+                fade_in_story(content_frame, story, sentiment_frame, sentiment)
+                entries.append(story)
+            else:
+                display_placeholder_message(content_frame, "No stories available")
+        except queue.Empty:
+            logging.debug(f"Feed queue is empty for category: {category_name}")
+        finally:
+            logging.debug(f"Scheduling next story display in {UPDATE_INTERVAL}ms for category: {category_name}")
+
+    def display_placeholder_message(frame, message):
+        for widget in frame.children():
+            widget.deleteLater()  # Clear existing widgets
+        label = QLabel(message, parent=frame)
+        label.setStyleSheet("font-size: 14px;")
+        label.setAlignment(Qt.AlignCenter)
+        frame.layout().addWidget(label)
+
+    run_in_thread(fetch_feed_entries)
+
+    timer = QTimer(root)
+    timer.timeout.connect(show_next_story)
+    timer.start(UPDATE_INTERVAL)
+
+    def refresh_feed():
+        run_in_thread(fetch_feed_entries)
+
+    refresh_timer = QTimer(root)
+    refresh_timer.timeout.connect(refresh_feed)
+    refresh_timer.start(UPDATE_INTERVAL * 30)
+
+    show_next_story()

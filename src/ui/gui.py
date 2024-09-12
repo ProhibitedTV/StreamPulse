@@ -3,21 +3,24 @@ import logging
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QFrame, QGridLayout, QWidget, QGraphicsDropShadowEffect
 from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtCore import Qt
-from api.fetchers import FetchStockData  # Import the stock data fetching class
 from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
 from ui.stock_ticker import create_stock_ticker_widget
+from utils.threading import run_with_callback
 
-def setup_main_frame(root):
+def setup_main_frame(root, feeds_data, stock_data):
     """
     Sets up the main GUI layout for the StreamPulse application.
 
     Args:
         root (QWidget): The main window or parent widget for the application.
+        feeds_data (dict): Loaded RSS feed data passed from the loading screen.
+        stock_data (dict): Loaded stock price data passed from the loading screen.
 
     Returns:
         QWidget: The central widget containing the main frame layout.
     """
     logging.debug("Setting up main frame...")
+
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     bg_image_path = os.path.join(project_root, 'images', 'bg.png')
 
@@ -31,13 +34,13 @@ def setup_main_frame(root):
     load_background_image(central_widget, layout, bg_image_path)
 
     # Create the news sections
-    create_news_sections(layout, root)
+    create_news_sections(layout, root, feeds_data)
 
     # Add the stats, clock, and other widgets
     add_stats_and_clock_widgets(layout, central_widget)
 
     # Stock ticker at the bottom, spanning across the full window width
-    stock_ticker_frame = create_stock_ticker_widget()
+    stock_ticker_frame = create_stock_ticker_widget(stock_data)
     stock_ticker_frame.setFixedHeight(50)  # Adjust height for better visibility
     stock_ticker_frame.setStyleSheet("""
         background-color: rgba(0, 0, 0, 0.8); 
@@ -49,9 +52,6 @@ def setup_main_frame(root):
 
     # Ensure the stock ticker is always at the bottom
     layout.setRowStretch(4, 1)
-
-    # Initialize stock data fetching and connect the signal
-    fetch_stock_data(stock_ticker_frame)
 
     logging.debug("Main frame setup complete.")
     return central_widget
@@ -99,17 +99,22 @@ def apply_shadow_effect(widget):
     shadow.setColor(QColor(0, 0, 0, 160))
     widget.setGraphicsEffect(shadow)
 
-def create_news_sections(layout, root):
+def create_news_sections(layout, root, feeds_data):
     """
     Creates the news section widgets and adds them to the layout.
 
     Args:
         layout (QGridLayout): The layout to add the news section frames.
         root (QWidget): The main window or parent widget.
+        feeds_data (dict): The news feeds data to populate the sections.
 
     Returns:
         None
     """
+    if feeds_data is None:
+        logging.error("Feeds data is None. Cannot create news sections.")
+        return
+
     categories = [
         ("General", "general"),
         ("Financial", "financial"),
@@ -152,6 +157,13 @@ def create_news_sections(layout, root):
         sentiment_frame = QWidget(section_frame)
         content_layout.addWidget(sentiment_frame)
 
+        # Check if the category exists in feeds_data before trying to access it
+        if internal_category in feeds_data:
+            # Populate the section with the feeds data for that category
+            logging.info(f"Populating {category_name} with news feeds.")
+        else:
+            logging.warning(f"No data found for {category_name}")
+
 def add_stats_and_clock_widgets(layout, central_widget):
     """
     Adds the statistics and clock widgets to the layout.
@@ -178,20 +190,22 @@ def add_stats_and_clock_widgets(layout, central_widget):
     stats_clock_layout.addWidget(create_global_stats_widget())
     stats_clock_layout.addWidget(create_world_clock_widget())
 
-def fetch_stock_data(stock_ticker_frame):
+def create_stock_ticker_widget(stock_data):
     """
-    Starts fetching stock data and connects it to the stock ticker widget.
+    Creates and returns a widget for the stock ticker, displaying stock prices.
 
     Args:
-        stock_ticker_frame (QWidget): The stock ticker widget frame that will display the stock data.
+        stock_data (dict): Loaded stock price data to display.
 
     Returns:
-        None
+        QFrame: The stock ticker widget.
     """
-    # Create a FetchStockData thread and connect the signal to the stock ticker
-    fetch_stock_thread = FetchStockData()
-    stock_ticker = stock_ticker_frame.findChild(QWidget, None)
-    fetch_stock_thread.stock_data_signal.connect(stock_ticker.set_ticker_text)
+    ticker_frame = QFrame()
+    ticker_layout = QVBoxLayout(ticker_frame)
 
-    # Start fetching the stock data
-    fetch_stock_thread.start()
+    for symbol, price in stock_data.items():
+        stock_label = QLabel(f"{symbol}: ${price:.2f}")
+        stock_label.setStyleSheet("color: white; font-size: 12px;")
+        ticker_layout.addWidget(stock_label)
+
+    return ticker_frame
