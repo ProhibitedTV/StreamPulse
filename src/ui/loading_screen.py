@@ -1,5 +1,5 @@
 """
-loading_screen.py
+ui/loading_screen.py
 
 This module defines the LoadingScreen class, which is responsible for displaying a loading screen while
 the application fetches necessary data, such as RSS feeds and stock prices. It handles asynchronous
@@ -24,7 +24,6 @@ from utils.threading import run_with_callback
 
 logging.basicConfig(level=logging.INFO)
 
-
 class LoadingScreen(QMainWindow):
     """
     LoadingScreen displays a loading screen while the application fetches necessary
@@ -36,6 +35,8 @@ class LoadingScreen(QMainWindow):
     def __init__(self, on_complete):
         super().__init__()
         self.on_complete = on_complete
+        self.feeds_data = None
+        self.stock_data = None
         self.setWindowTitle("Loading Data...")
         self.showFullScreen()
 
@@ -133,42 +134,36 @@ class LoadingScreen(QMainWindow):
         Returns:
             dict: A dictionary containing 'rss_feeds' and 'stock_data' or None if loading fails.
         """
-        # Load RSS feeds
         rss_feeds = load_feed_config()
         if not rss_feeds:
             logging.error("Failed to load RSS feeds.")
             return None
 
+        # Start feed loading and stock data fetching asynchronously
         results = {"rss_feeds": None, "stock_data": None}
         feed_loaded = [False]
         stock_loaded = [False]
 
-        # Update progress for RSS feeds
+        # Define the update functions
         def feed_progress_update(progress):
             self.progress_signal.emit(progress, f"Loading feeds... {int(progress)}%")
 
-        # Handle completion of RSS feed loading
         def on_feeds_loaded():
             results["rss_feeds"] = rss_feeds
             feed_loaded[0] = True
             self.check_if_complete(results, feed_loaded, stock_loaded)
 
+        # Load feeds
         load_feeds(rss_feeds, feed_progress_update)
         on_feeds_loaded()
 
-        # Load stock data asynchronously using FetchStockData class
+        # Load stock data
         stock_data_thread = FetchStockData()
         stock_data_thread.progress_signal.connect(self.progress_signal.emit)
 
-        # Handle completion of stock data loading
         def on_stock_data_loaded():
             stock_data_thread.wait()
-            # Fetch the actual stock data
-            if stock_data_thread.stock_data_signal:
-                results["stock_data"] = stock_data_thread.stock_data_signal
-            else:
-                logging.error("Failed to load stock data.")
-                results["stock_data"] = None
+            results["stock_data"] = stock_data_thread.stock_data_signal
             stock_loaded[0] = True
             self.check_if_complete(results, feed_loaded, stock_loaded)
 
@@ -187,12 +182,12 @@ class LoadingScreen(QMainWindow):
             stock_loaded (list): List indicating if the stock data loading is complete.
         """
         if feed_loaded[0] and stock_loaded[0]:
-            if results["rss_feeds"] and results["stock_data"]:
+            if results["rss_feeds"] or results["stock_data"]:  # Proceed even if one is None
                 self.progress_signal.emit(100, "Loading complete")
-                return results
+                self.feeds_data = results["rss_feeds"] if results["rss_feeds"] else {}
+                self.stock_data = results["stock_data"] if results["stock_data"] else {}
             else:
                 logging.error("Incomplete data loaded. Check RSS feeds or stock data.")
-                return None
 
     def on_data_loaded(self, future=None):
         """
@@ -206,13 +201,20 @@ class LoadingScreen(QMainWindow):
             if future:
                 data = future.result()
             else:
-                data = self.load_data_and_complete()
+                data = {"rss_feeds": self.feeds_data, "stock_data": self.stock_data}
 
-            if not data or not data["rss_feeds"] or not data["stock_data"]:
-                raise ValueError("Failed to load data.")
+            if not data["rss_feeds"]:
+                logging.warning("Feeds data is None, continuing with placeholders.")
+                data["rss_feeds"] = {"error": "No valid RSS feeds loaded."}
 
-            # Store feeds and stock data
-            self.feeds_data, self.stock_data = data["rss_feeds"], data["stock_data"]
+            if not data["stock_data"]:
+                logging.warning("Stock data is None, continuing with placeholders.")
+                data["stock_data"] = {"error": "No valid stock data loaded."}
+
+            logging.debug(f"Loaded data: {data}")
+            # Pass data to main app
+            self.feeds_data = data["rss_feeds"]
+            self.stock_data = data["stock_data"]
             self.close_loading_screen()
 
         except Exception as e:
@@ -233,7 +235,11 @@ class LoadingScreen(QMainWindow):
         """
         Closes the loading screen and proceeds to the main application.
         """
-        self.on_complete()
+        result = {
+            "rss_feeds": self.feeds_data,
+            "stock_data": self.stock_data
+        }
+        self.on_complete(result)  # Pass the loaded data to the callback
         self.close()
 
     def closeEvent(self, event):

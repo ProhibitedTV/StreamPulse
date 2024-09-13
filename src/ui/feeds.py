@@ -1,20 +1,22 @@
 """
-feeds.py
+ui/feeds.py
 
 This module handles the loading and updating of RSS feeds for the StreamPulse application.
 It fetches the RSS feed content, displays news stories dynamically in the PyQt5 interface,
 and updates the UI in regular intervals.
 
-Functions:
-    load_feed_config - Loads RSS feed URLs from a configuration file.
-    load_feeds - Loads RSS feeds concurrently and updates the progress.
-    update_feed - Dynamically fetches and displays RSS feed content, updating every 10 seconds.
+Key Enhancements:
+    - Retry mechanism with exponential backoff for feed fetching.
+    - Feed disabling after repeated failures to reduce load.
+    - Failure tracking and creative error handling.
 """
 
 import logging
 import json
 import os
 import queue
+import threading
+import time
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import QLabel
 from utils.threading import run_in_thread
@@ -26,9 +28,15 @@ from ui.story_display import fade_in_story
 UPDATE_INTERVAL = 10000  # 10 seconds
 feed_queue = queue.Queue()  # Global queue for feed entries
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'rss_feeds.json')
+RETRY_LIMIT = 3  # Maximum number of retry attempts for a failed feed
+RETRY_BACKOFF = 2  # Exponential backoff multiplier (2^n seconds)
+DISABLED_FEEDS = set()  # Track feeds that are disabled due to repeated failures
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
+
+# Track failure count for each feed URL
+failure_counts = {}
 
 def load_feed_config(config_file=None):
     """
@@ -46,15 +54,58 @@ def load_feed_config(config_file=None):
     try:
         with open(config_file, 'r') as file:
             rss_feeds = json.load(file)
-            logging.info(f"Loaded RSS feed configuration from {config_file}.")
+            if rss_feeds:
+                logging.info(f"Loaded RSS feed configuration from {config_file}.")
+            else:
+                logging.warning(f"No RSS feeds found in {config_file}.")
             return rss_feeds
     except Exception as e:
-        logging.error(f"Error loading feed configuration: {e}")
+        logging.error(f"Error loading feed configuration from {config_file}: {e}")
         return {}
+
+def fetch_with_retry(feed_url, category, retries=0):
+    """
+    Fetch an RSS feed with retry logic using exponential backoff. If the feed fails
+    after RETRY_LIMIT attempts, it is disabled for the current session.
+
+    Args:
+        feed_url (str): The URL of the RSS feed.
+        category (str): The category to which the feed belongs.
+        retries (int, optional): Current retry count.
+
+    Returns:
+        feed: The fetched feed object, or None if it fails after retries.
+    """
+    try:
+        if feed_url in DISABLED_FEEDS:
+            logging.warning(f"Feed {feed_url} is disabled and will not be fetched.")
+            return None
+
+        feed = fetch_rss_feed(feed_url)
+        if feed and feed.entries:
+            logging.info(f"Successfully fetched feed from {feed_url}")
+            return feed
+        else:
+            raise ValueError(f"Feed {feed_url} returned no entries.")
+
+    except Exception as e:
+        logging.error(f"Error fetching feed {feed_url}: {e}")
+
+        # Retry with exponential backoff
+        if retries < RETRY_LIMIT:
+            retry_delay = RETRY_BACKOFF ** retries
+            logging.info(f"Retrying feed {feed_url} in {retry_delay} seconds (Attempt {retries + 1}/{RETRY_LIMIT})")
+            time.sleep(retry_delay)
+            return fetch_with_retry(feed_url, category, retries + 1)
+        else:
+            logging.error(f"Feed {feed_url} failed after {RETRY_LIMIT} retries. Disabling for this session.")
+            DISABLED_FEEDS.add(feed_url)
+            return None
 
 def load_feeds(rss_feeds, update_progress):
     """
     Loads all feeds concurrently using threads and updates the progress bar.
+    Includes retry logic and feed disabling.
 
     Args:
         rss_feeds (dict): Dictionary of RSS feeds.
@@ -69,46 +120,51 @@ def load_feeds(rss_feeds, update_progress):
 
     total_feeds = sum(len(feeds) for feeds in rss_feeds.values())
     loaded_feeds = [0]
+    loaded_data = {}
+    threads = []
 
-    def update_progress_callback(feed):
+    def update_progress_callback(feed, category):
         """
-        Callback to update progress bar after each feed is processed.
+        Callback to update progress bar after each feed is processed and store the data.
         """
+        if category not in loaded_data:
+            loaded_data[category] = []
+        if feed:
+            loaded_data[category].append(feed)
+
         loaded_feeds[0] += 1
         progress = (loaded_feeds[0] / total_feeds) * 100
         update_progress(progress)
 
-    # Load feeds in separate threads using the fetch_rss_feed from fetchers.py
+    def fetch_and_store_feed(feed, category):
+        fetched_feed = fetch_with_retry(feed, category)
+        update_progress_callback(fetched_feed, category)
+
+    # Create threads for each feed and start fetching
     for category, feeds in rss_feeds.items():
         for feed in feeds:
-            run_in_thread(fetch_rss_feed, feed, update_progress_callback)
+            thread = threading.Thread(target=fetch_and_store_feed, args=(feed, category))
+            threads.append(thread)
+            thread.start()
 
-    return rss_feeds
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
+
+    return loaded_data if loaded_feeds[0] > 0 else None
 
 def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
     """
     Fetch and display RSS feed content dynamically, updating every 10 seconds.
-
-    Args:
-        rss_feeds (list): A list of RSS feed URLs to fetch data from.
-        content_frame (QWidget): The frame in the GUI where the feed content will be displayed.
-        root (QWidget): The main PyQt5 window or parent widget.
-        category_name (str): The category name of the feed (e.g., 'General News').
-        sentiment_frame (QWidget): A frame for displaying sentiment analysis results.
     """
     def fetch_feed_entries():
         feed_entries = []
         logging.info(f"Fetching feeds for category: {category_name}")
 
         for feed_url in rss_feeds:
-            try:
-                feed = fetch_rss_feed(feed_url)
-                if feed:
-                    feed_entries.extend(feed.entries[:3])  # Limit to 3 stories per feed
-                else:
-                    logging.warning(f"No feed found at {feed_url}")
-            except Exception as e:
-                logging.error(f"Error fetching feed from {feed_url}: {e}")
+            feed = fetch_with_retry(feed_url, category_name)
+            if feed:
+                feed_entries.extend(feed.entries[:3])  # Limit to 3 stories per feed
 
         if not feed_entries:
             logging.warning(f"No entries retrieved for category: {category_name}")
@@ -141,10 +197,6 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
     def display_placeholder_message(frame, message):
         """
         Displays a placeholder message in case no stories are available.
-
-        Args:
-            frame (QWidget): The content frame in which to display the message.
-            message (str): The message to display.
         """
         for widget in frame.children():
             widget.deleteLater()  # Clear existing widgets

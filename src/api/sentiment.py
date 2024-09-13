@@ -1,5 +1,5 @@
 """
-sentiment.py
+api/sentiment.py
 
 This module is responsible for performing sentiment analysis using a local Ollama instance.
 It includes functions to fetch available models, perform sentiment analysis, and update a 

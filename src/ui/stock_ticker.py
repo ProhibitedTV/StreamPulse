@@ -1,5 +1,5 @@
 """
-stock_ticker.py
+ui/stock_ticker.py
 
 This module defines the StockTicker widget, which displays scrolling stock prices.
 It includes functionality to dynamically update and scroll the ticker text for real-time stock price display.

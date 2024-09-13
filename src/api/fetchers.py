@@ -1,5 +1,5 @@
 """
-fetchers.py
+api/fetchers.py
 
 This module contains utility functions and classes for fetching data related to RSS feeds,
 stock prices, and images. It uses retry logic for network requests, handles API interactions

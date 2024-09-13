@@ -1,5 +1,5 @@
 """
-web.py
+utils/web.py
 
 This module provides utility functions related to web operations. 
 Currently, it includes a function for opening URLs in the default web browser.

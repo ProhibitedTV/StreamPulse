@@ -54,18 +54,15 @@ class StreamPulseApp(QMainWindow):
         # Set close event handling
         self.closeEvent = self.on_close
 
-    def start_application(self, future=None):
+    def start_application(self):
         """
         Initialize the main application window once the news feeds and stock data 
         have finished loading. This function sets up the main frame of the application.
-
-        Args:
-            future: The future object returned from the background loading task.
         """
-        logging.info("News feeds loaded, starting the main application.")
+        logging.info("Starting the main application window.")
         try:
             # Pass the loaded feeds_data and stock_data to the main frame setup
-            setup_main_frame(self, self.feeds_data, self.stock_data)
+            setup_main_frame(self, self.feeds_data or {}, self.stock_data or {})
             self.showFullScreen()  # Ensure the main window is in full-screen mode after the setup
             self.repaint()  # Force repaint after loading
         except Exception as e:
@@ -79,39 +76,36 @@ class StreamPulseApp(QMainWindow):
         logging.info("Displaying loading screen and starting feed loading process.")
         try:
             # Show loading screen and start loading feeds in the background using threading.py
-            self.loading_screen = LoadingScreen(self.start_application)
+            self.loading_screen = LoadingScreen(self.on_data_loaded)
             self.loading_screen.show()
-
-            # Use the run_with_callback to handle background loading and trigger start_application after completion
-            run_with_callback(self.loading_screen.start_loading_data, self.on_data_loaded)
 
         except Exception as e:
             logging.error(f"Error occurred during loading process: {e}", exc_info=True)
             QMessageBox.critical(self, "Loading Error", "An error occurred while loading data. Please restart the application.")
 
-    def on_data_loaded(self, future):
+    def on_data_loaded(self, result):
         """
         Callback after data has loaded. It checks the validity of the loaded data 
         and proceeds with starting the main application.
 
         Args:
-            future: The future object containing the loaded data.
+            result: The dictionary containing 'rss_feeds' and 'stock_data'.
         """
         logging.info("Data loading complete, processing data.")
         try:
-            # Extract data from the future result, and check if it's valid
-            result = future.result()
-            if result is None or not isinstance(result, dict):
+            # Check if the result contains valid data
+            if not result or not isinstance(result, dict):
                 raise ValueError("No data was loaded or invalid data format.")
-            
-            self.feeds_data = result.get("rss_feeds", None)
-            self.stock_data = result.get("stock_data", None)
 
-            # Ensure both data sources are loaded
-            if self.feeds_data is None or self.stock_data is None:
-                logging.error("Failed to load feeds or stock data.")
-                QMessageBox.critical(self, "Data Error", "Failed to load feeds or stock data. Please check the configuration.")
-                return
+            # Default to empty dicts if data is missing
+            self.feeds_data = result.get("rss_feeds", {})
+            self.stock_data = result.get("stock_data", {})
+
+            # If feeds_data or stock_data is None, log and proceed with placeholders
+            if not self.feeds_data:
+                logging.warning("Feeds data is None or invalid, continuing with placeholders.")
+            if not self.stock_data:
+                logging.warning("Stock data is None or invalid, continuing with placeholders.")
 
             # Start the main application
             self.start_application()

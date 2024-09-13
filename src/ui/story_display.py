@@ -1,5 +1,5 @@
 """
-story_display.py
+ui/story_display.py
 
 This module handles the display of news stories in the StreamPulse application.
 It manages loading images, sentiment analysis, text-to-speech processing, and

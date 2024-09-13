@@ -1,5 +1,5 @@
 """
-stats_widgets.py
+ui/stats_widgets.py
 
 This module provides widgets for displaying global statistics such as U.S. National Debt, Global CO2 Emissions,
 and a live world clock. These widgets are designed to integrate with the PyQt5 interface and update dynamically
@@ -7,6 +7,7 @@ with real-time data.
 """
 
 import logging
+import requests
 from datetime import datetime
 from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
 from PyQt5.QtCore import QTimer

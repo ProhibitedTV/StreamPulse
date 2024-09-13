@@ -1,3 +1,19 @@
+"""
+ui/gui.py
+
+This module handles the creation and setup of the main graphical user interface (GUI)
+for the StreamPulse application. It defines the layout, background, widgets, and
+custom sections for displaying news feeds, stock tickers, and other dynamic data.
+
+Functions:
+    setup_main_frame - Initializes the main layout of the application and arranges the various sections.
+    load_background_image - Loads and applies a background image to the central widget.
+    apply_shadow_effect - Adds a shadow effect to a given widget for visual enhancement.
+    create_news_sections - Dynamically creates news sections based on the feed data provided.
+    add_stats_and_clock_widgets - Adds statistics and world clock widgets to the layout.
+    create_stock_ticker_widget - Creates a stock ticker widget displaying stock prices dynamically.
+"""
+
 import os
 import logging
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QFrame, QGridLayout, QWidget, QGraphicsDropShadowEffect
