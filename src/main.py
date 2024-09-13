@@ -19,12 +19,11 @@ import logging
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
 from ui.loading_screen import LoadingScreen  # Import the LoadingScreen class
 from ui.gui import setup_main_frame
-from utils.threading import shutdown_executor, run_with_callback  # Use the new threading module
+from utils.threading import shutdown_executor  # Use the new threading module
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting StreamPulse application...")
-
 
 class StreamPulseApp(QMainWindow):
     """

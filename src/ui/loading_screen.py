@@ -10,19 +10,80 @@ Key Features:
 - Loads RSS feeds and stock data asynchronously.
 - Provides smooth visual transitions using opacity effects.
 - Uses signals to communicate data loading progress.
-
-Classes:
-    LoadingScreen - Manages the display and behavior of the loading screen during data loading.
 """
 
 import logging
+import json
+import os
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation
-from ui.feeds import load_feeds, load_feed_config  # Use feeds.py's functions
-from api.fetchers import FetchStockData  # Use the class for fetching stock data
+from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QThread
+from api.fetchers import fetch_rss_feed, fetch_stock_price
 from utils.threading import run_with_callback
 
 logging.basicConfig(level=logging.INFO)
+
+RSS_FEED_FILE = os.path.join(os.path.dirname(__file__), 'rss_feeds.json')
+
+class RSSFeedLoader(QThread):
+    """
+    QThread class to load RSS feeds asynchronously.
+    """
+    progress_signal = pyqtSignal(int, str)  # Signal to emit progress updates
+    data_loaded_signal = pyqtSignal(dict)  # Signal emitted when all feeds are loaded
+
+    def __init__(self, rss_feeds):
+        super().__init__()
+        self.rss_feeds = rss_feeds
+
+    def run(self):
+        total_feeds = sum(len(feeds) for feeds in self.rss_feeds.values())
+        loaded_feeds = 0
+        result = {}
+
+        for category, feeds in self.rss_feeds.items():
+            result[category] = []
+            for feed_url in feeds:
+                try:
+                    logging.info(f"Fetching feed: {feed_url}")
+                    feed_data = fetch_rss_feed(feed_url)
+                    if "error" not in feed_data:
+                        result[category].append(feed_data)
+                except Exception as e:
+                    logging.error(f"Error loading feed {feed_url}: {e}")
+                
+                loaded_feeds += 1
+                progress = (loaded_feeds / total_feeds) * 50
+                self.progress_signal.emit(int(progress), f"Loaded {loaded_feeds}/{total_feeds} feeds")
+        
+        self.data_loaded_signal.emit(result)
+
+
+class StockDataLoader(QThread):
+    """
+    QThread class to load stock data asynchronously.
+    """
+    progress_signal = pyqtSignal(int, str)  # Signal to emit progress updates
+    stock_data_signal = pyqtSignal(dict)  # Signal emitted when stock data is loaded
+
+    def run(self):
+        stocks = [
+            "AAPL", "GOOGL", "MSFT", "AMZN", "META", "TSLA", "NFLX", "NVDA", "AMD", "INTC"
+        ]
+        stock_data = {}
+        total_stocks = len(stocks)
+
+        for i, symbol in enumerate(stocks):
+            try:
+                price = fetch_stock_price(symbol)
+                stock_data[symbol] = price
+            except Exception as e:
+                logging.error(f"Error fetching stock price for {symbol}: {e}")
+                stock_data[symbol] = "Error"
+
+            progress = 50 + ((i + 1) / total_stocks) * 50
+            self.progress_signal.emit(int(progress), f"Loaded stock price for {symbol}")
+
+        self.stock_data_signal.emit(stock_data)
 
 
 class LoadingScreen(QMainWindow):
@@ -36,9 +97,10 @@ class LoadingScreen(QMainWindow):
     def __init__(self, on_complete):
         super().__init__()
         self.on_complete = on_complete
-        self.feeds_data = None
+        self.rss_feeds = None
         self.stock_data = None
-        self.stock_data_thread = None  # Store the stock data thread
+        self.feeds_loader = None
+        self.stock_loader = None
         self.setWindowTitle("Loading Data...")
         self.showFullScreen()
 
@@ -117,130 +179,63 @@ class LoadingScreen(QMainWindow):
         self.progress_bar.setValue(capped_progress)
         self.status_label.setText(message)
 
-        if capped_progress == 100:
-            logging.info("Data loading complete, closing loading screen.")
-            self.fade_out_and_close()
-
     def start_loading_data(self):
         """
         Initiates the loading of data by running the load_data_and_complete function in a background thread.
         """
         logging.info("Starting data loading process.")
-        run_with_callback(self.load_data_and_complete, self.on_data_loaded)
+        rss_feeds = self.load_rss_feeds()
 
-    def load_data_and_complete(self):
+        # Start the RSS feeds loader thread
+        self.feeds_loader = RSSFeedLoader(rss_feeds)
+        self.feeds_loader.progress_signal.connect(self.update_progress)
+        self.feeds_loader.data_loaded_signal.connect(self.on_feeds_loaded)
+        self.feeds_loader.start()
+
+        # Start the stock data loader thread
+        self.stock_loader = StockDataLoader()
+        self.stock_loader.progress_signal.connect(self.update_progress)
+        self.stock_loader.stock_data_signal.connect(self.on_stock_data_received)
+        self.stock_loader.start()
+
+    def load_rss_feeds(self):
         """
-        Loads RSS feeds and stock data, emits progress signals, and checks the completion of the loading process.
-        Returns:
-            dict: A dictionary containing 'rss_feeds' and 'stock_data' or None if loading fails.
+        Loads the RSS feed configuration from the JSON file.
         """
-        rss_feeds = load_feed_config()
-        if not rss_feeds:
-            logging.error("Failed to load RSS feeds.")
-            return None
-
-        # Start feed loading and stock data fetching asynchronously
-        results = {"rss_feeds": None, "stock_data": None}
-        feed_loaded = [False]
-        stock_loaded = [False]
-
-        # Define the update functions
-        def feed_progress_update(progress, message=""):
-            """
-            Updates the progress bar with the current progress percentage and message.
-            Args:
-                progress (float): The current progress percentage (0 to 100).
-                message (str): The message to display alongside the progress.
-            """
-            self.progress_signal.emit(progress, message)
-
-        def on_feeds_loaded():
-            loaded_data = load_feeds(rss_feeds, feed_progress_update)  # Call load_feeds from feeds.py
-            if loaded_data:
-                results["rss_feeds"] = loaded_data
-            else:
-                results["rss_feeds"] = {"error": "No valid RSS feeds loaded."}
-            feed_loaded[0] = True
-            self.check_if_complete(results, feed_loaded, stock_loaded)
-
-        # Load feeds
-        on_feeds_loaded()
-
-        # Load stock data
-        self.stock_data_thread = FetchStockData()
-
-        def on_stock_data_received(stock_text):
-            """
-            Callback function to handle stock data once fetched.
-            """
-            if stock_text:
-                results["stock_data"] = stock_text
-            else:
-                results["stock_data"] = "No valid stock data available."
-            stock_loaded[0] = True
-            self.check_if_complete(results, feed_loaded, stock_loaded)
-
-        self.stock_data_thread.stock_data_signal.connect(on_stock_data_received)
-
-        self.stock_data_thread.start()
-
-        return None  # Return None as this is asynchronous
-
-    def check_if_complete(self, results, feed_loaded, stock_loaded):
-        """
-        Checks if both RSS feeds and stock data have finished loading and returns the results.
-        Args:
-            results (dict): The dictionary holding the loaded data.
-            feed_loaded (list): List indicating if the RSS feed loading is complete.
-            stock_loaded (list): List indicating if the stock data loading is complete.
-        """
-        if feed_loaded[0] and stock_loaded[0]:
-            if not results["rss_feeds"]:
-                logging.warning("No valid RSS feeds loaded.")
-                results["rss_feeds"] = {"error": "No valid RSS feeds loaded."}
-
-            if not results["stock_data"]:
-                logging.warning("No valid stock data loaded.")
-                results["stock_data"] = "Stock data not available."
-
-            self.progress_signal.emit(100, "Loading complete")
-            self.feeds_data = results["rss_feeds"]
-            self.stock_data = results["stock_data"]
-
-    def on_data_loaded(self, future=None):
-        """
-        Callback triggered when data has finished loading. Transitions to the main application window.
-
-        Args:
-            future: The future object returned by the background task.
-        """
-        logging.info("Worker thread finished, transitioning to main window.")
         try:
-            if future:
-                data = future.result()
-            else:
-                data = {"rss_feeds": self.feeds_data, "stock_data": self.stock_data}
-
-            if not data["rss_feeds"]:
-                logging.warning("Feeds data is None, continuing with placeholders.")
-                data["rss_feeds"] = {"error": "No valid RSS feeds loaded."}
-
-            if not data["stock_data"]:
-                logging.warning("Stock data is None, continuing with placeholders.")
-                data["stock_data"] = {"error": "No valid stock data loaded."}
-
-            logging.debug(f"Loaded data: {data}")
-            # Pass data to main app
-            self.feeds_data = data["rss_feeds"]
-            self.stock_data = data["stock_data"]
-            self.close_loading_screen()
-
+            with open(RSS_FEED_FILE, 'r') as file:
+                rss_feeds = json.load(file)
+                return rss_feeds
         except Exception as e:
-            logging.error(f"Error processing loaded data: {e}", exc_info=True)
+            logging.error(f"Error loading RSS feeds configuration: {e}")
+            return {}
+
+    def on_feeds_loaded(self, feeds_data):
+        """
+        Callback function when RSS feeds are loaded.
+        """
+        self.rss_feeds = feeds_data
+        self.check_if_complete()
+
+    def on_stock_data_received(self, stock_data):
+        """
+        Callback function when stock data is loaded.
+        """
+        self.stock_data = stock_data
+        self.check_if_complete()
+
+    def check_if_complete(self):
+        """
+        Checks if both RSS feeds and stock data have been loaded before proceeding.
+        """
+        if self.rss_feeds is not None and self.stock_data is not None:
+            logging.info("All data loaded, proceeding to close the loading screen.")
+            self.progress_signal.emit(100, "All data loaded")
+            self.fade_out_and_close()
 
     def fade_out_and_close(self):
         """
-        Fades out the loading screen and closes it.
+        Fades out the loading screen and closes it after ensuring all data is loaded.
         """
         self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
         self.fade_out_animation.setDuration(1000)
@@ -253,12 +248,8 @@ class LoadingScreen(QMainWindow):
         """
         Closes the loading screen and proceeds to the main application.
         """
-        if self.stock_data_thread and self.stock_data_thread.isRunning():
-            self.stock_data_thread.quit()  # Gracefully stop the thread if it's still running
-            self.stock_data_thread.wait()  # Wait for the thread to finish
-
         result = {
-            "rss_feeds": self.feeds_data,
+            "rss_feeds": self.rss_feeds,
             "stock_data": self.stock_data
         }
         self.on_complete(result)
@@ -272,7 +263,10 @@ class LoadingScreen(QMainWindow):
             event: The close event.
         """
         logging.info("Closing loading screen.")
-        if self.stock_data_thread and self.stock_data_thread.isRunning():
-            self.stock_data_thread.quit()  # Gracefully stop the thread
-            self.stock_data_thread.wait()  # Wait for it to finish
+        if self.feeds_loader and self.feeds_loader.isRunning():
+            self.feeds_loader.quit()
+            self.feeds_loader.wait()
+        if self.stock_loader and self.stock_loader.isRunning():
+            self.stock_loader.quit()
+            self.stock_loader.wait()
         event.accept()

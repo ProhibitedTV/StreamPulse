@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import QVBoxLayout, QLabel, QFrame, QGridLayout, QWidget, Q
 from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtCore import Qt
 from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
-from ui.stock_ticker import create_stock_ticker_widget
+from ui.stock_ticker import create_stock_ticker_widget, StockTicker  # Import the stock ticker widget
 from utils.threading import run_with_callback
 
 def setup_main_frame(root, feeds_data, stock_data):
@@ -36,15 +36,6 @@ def setup_main_frame(root, feeds_data, stock_data):
         QWidget: The central widget containing the main frame layout.
     """
     logging.debug("Setting up main frame...")
-
-    # Check if feeds_data and stock_data are None
-    if feeds_data is None:
-        logging.error("Feeds data is None. Cannot set up news sections.")
-        return  # Early return if feeds_data is None
-
-    if stock_data is None:
-        logging.error("Stock data is None. Cannot create stock ticker widget.")
-        return  # Early return if stock_data is None
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     bg_image_path = os.path.join(project_root, 'images', 'bg.png')
@@ -65,7 +56,7 @@ def setup_main_frame(root, feeds_data, stock_data):
     add_stats_and_clock_widgets(layout, central_widget)
 
     # Stock ticker at the bottom, spanning across the full window width
-    stock_ticker_frame = create_stock_ticker_widget(stock_data)
+    stock_ticker_frame = create_stock_ticker_widget()  # Create the ticker widget
     stock_ticker_frame.setFixedHeight(50)  # Adjust height for better visibility
     stock_ticker_frame.setStyleSheet(""" 
         background-color: rgba(0, 0, 0, 0.8); 
@@ -77,6 +68,12 @@ def setup_main_frame(root, feeds_data, stock_data):
 
     # Ensure the stock ticker is always at the bottom
     layout.setRowStretch(4, 1)
+
+    # If stock data is available, update the stock ticker
+    stock_ticker = stock_ticker_frame.findChild(StockTicker)
+    if stock_ticker and stock_data:
+        stock_text = "  |  ".join([f"{symbol}: {price}" for symbol, price in stock_data.items()])
+        stock_ticker.set_ticker_text(stock_text)
 
     logging.debug("Main frame setup complete.")
     return central_widget
@@ -179,9 +176,6 @@ def create_news_sections(layout, root, feeds_data):
         content_frame = QWidget(section_frame)
         content_layout.addWidget(content_frame)
 
-        sentiment_frame = QWidget(section_frame)
-        content_layout.addWidget(sentiment_frame)
-
         # Check if the category exists in feeds_data before trying to access it
         if internal_category in feeds_data:
             # Populate the section with the feeds data for that category
@@ -214,23 +208,3 @@ def add_stats_and_clock_widgets(layout, central_widget):
 
     stats_clock_layout.addWidget(create_global_stats_widget())
     stats_clock_layout.addWidget(create_world_clock_widget())
-
-def create_stock_ticker_widget(stock_data):
-    """
-    Creates and returns a widget for the stock ticker, displaying stock prices.
-
-    Args:
-        stock_data (dict): Loaded stock price data to display.
-
-    Returns:
-        QFrame: The stock ticker widget.
-    """
-    ticker_frame = QFrame()
-    ticker_layout = QVBoxLayout(ticker_frame)
-
-    for symbol, price in stock_data.items():
-        stock_label = QLabel(f"{symbol}: ${price:.2f}")
-        stock_label.setStyleSheet("color: white; font-size: 12px;")
-        ticker_layout.addWidget(stock_label)
-
-    return ticker_frame
