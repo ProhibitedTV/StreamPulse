@@ -44,7 +44,7 @@
     ],
     "health_environment": [
         "https://www.who.int/feeds/entity/csr/don/en/rss.xml",
-        "https://feeds.washingtonpost.com/rss/lifestyle/wellness",
+        "https://feeds.washingtonpost.com/rss/lifestyle",
         "https://www.npr.org/rss/rss.php?id=1027",
         "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
         "https://www.nationalgeographic.com/content/natgeo/en_us/rss/index.rss",

@@ -75,12 +75,20 @@ class FetchRSSFeeds(QThread):
         total_feeds = len(self.feed_urls)
 
         for i, feed_url in enumerate(self.feed_urls):
+            logging.debug(f"Starting fetch for {feed_url}")
             result = fetch_rss_feed(feed_url)
             if result:
                 feed_entries.extend(result.entries[:3])  # Limit to 3 stories per feed
+                logging.debug(f"Fetched {len(result.entries)} entries from {feed_url}")
+            else:
+                logging.warning(f"No valid entries found for feed {feed_url}")
+                self.progress_signal.emit(int(((i + 1) / total_feeds) * 50), f"Failed to load {feed_url}")
+                continue
+
             progress = ((i + 1) / total_feeds) * 50  # Update progress (feeds are 50% of total)
             self.progress_signal.emit(int(progress), f"Loaded feed {i + 1} of {total_feeds}")
 
+        logging.info(f"Finished loading all RSS feeds")
         self.progress_signal.emit(50, "Finished loading feeds")  # 50% done
 
 
@@ -104,7 +112,11 @@ class FetchStockData(QThread):
 
         for index, symbol in enumerate(STOCKS):
             price = fetch_stock_price(symbol)
-            stock_prices.append(f"{symbol}: ${price}")
+            if isinstance(price, dict) and "error" in price:
+                stock_prices.append(f"{symbol}: {price['error']}")
+            else:
+                stock_prices.append(f"{symbol}: ${price}")
+
             progress = 50 + ((index + 1) / total_stocks) * 50  # Stocks account for the remaining 50%
             self.progress_signal.emit(int(progress), f"Fetching stock price for {symbol}")
 
@@ -114,28 +126,40 @@ class FetchStockData(QThread):
 
 
 # Functions for Fetching Data
-@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3), reraise=True)
 def fetch_rss_feed(feed_url):
     """
-    Fetches RSS feed content from the provided URL with retry logic.
+    Fetches RSS feed content from the provided URL with retry logic and detailed error logging.
     
     Args:
         feed_url (str): The RSS feed URL to fetch.
 
     Returns:
-        feedparser.FeedParserDict: Parsed RSS feed data, or None if an error occurs.
+        feedparser.FeedParserDict: Parsed RSS feed data, or a dictionary with an error message if an error occurs.
     """
     try:
         response = requests.get(feed_url, timeout=RSS_FETCH_TIMEOUT)
         response.raise_for_status()
-        logging.info(f"Fetched RSS feed from {feed_url}")
-        return feedparser.parse(response.content)
+
+        # Check if response is valid XML/HTML content type
+        if 'xml' not in response.headers.get('Content-Type', ''):
+            raise ValueError(f"Invalid content type {response.headers.get('Content-Type')} for feed {feed_url}")
+
+        feed_data = feedparser.parse(response.content)
+
+        # Ensure that we actually have valid feed entries
+        if not feed_data.entries:
+            raise ValueError(f"No valid entries found for feed {feed_url}")
+
+        logging.info(f"Successfully fetched and parsed feed from {feed_url}")
+        return feed_data
+
     except requests.RequestException as e:
         logging.error(f"Error fetching feed from {feed_url}: {e}")
-        return None
+        return {"error": f"Failed to load feed: {feed_url}"}
 
 
-@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(5), reraise=True)
 def fetch_stock_price(symbol):
     """
     Fetches real-time stock data from Alpha Vantage or Yahoo Finance if Alpha Vantage fails.
@@ -144,7 +168,7 @@ def fetch_stock_price(symbol):
         symbol (str): The stock symbol (e.g., AAPL, MSFT).
 
     Returns:
-        str: Stock price if successful, otherwise "N/A".
+        str or dict: Stock price if successful, otherwise a dictionary with an error message.
     """
     global alpha_vantage_failed
 
@@ -181,7 +205,7 @@ def fetch_from_yahoo_finance(symbol: str) -> str:
         symbol (str): The stock symbol (e.g., AAPL, MSFT).
 
     Returns:
-        str: Stock price as a formatted string if successful, otherwise "N/A".
+        str or dict: Stock price as a formatted string if successful, otherwise a dictionary with an error message.
     """
     try:
         ticker = yf.Ticker(symbol)
@@ -189,7 +213,7 @@ def fetch_from_yahoo_finance(symbol: str) -> str:
         
         if hist.empty:
             logging.warning(f"No data returned for {symbol}. It may be an invalid symbol or the market is closed.")
-            return "N/A"
+            return {"error": f"Invalid data for {symbol}. Market may be closed or symbol is incorrect"}
 
         price = hist['Close'].iloc[-1]
         formatted_price = f"{price:.2f}"
@@ -198,8 +222,7 @@ def fetch_from_yahoo_finance(symbol: str) -> str:
 
     except Exception as e:
         logging.error(f"Unexpected error fetching stock data from Yahoo Finance for {symbol}: {e}")
-    
-    return "N/A"
+        return {"error": f"Failed to fetch stock data for {symbol}"}
 
 
 def fetch_image(url, width, height):

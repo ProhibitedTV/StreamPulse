@@ -63,18 +63,17 @@ def load_feed_config(config_file=None):
         logging.error(f"Error loading feed configuration from {config_file}: {e}")
         return {}
 
-def fetch_with_retry(feed_url, category, retries=0):
+def fetch_with_retry(feed_url, retries=0):
     """
     Fetch an RSS feed with retry logic using exponential backoff. If the feed fails
     after RETRY_LIMIT attempts, it is disabled for the current session.
 
     Args:
         feed_url (str): The URL of the RSS feed.
-        category (str): The category to which the feed belongs.
         retries (int, optional): Current retry count.
 
     Returns:
-        feed: The fetched feed object, or None if it fails after retries.
+        feedparser.FeedParserDict: The fetched feed object, or None if it fails after retries.
     """
     try:
         if feed_url in DISABLED_FEEDS:
@@ -96,7 +95,7 @@ def fetch_with_retry(feed_url, category, retries=0):
             retry_delay = RETRY_BACKOFF ** retries
             logging.info(f"Retrying feed {feed_url} in {retry_delay} seconds (Attempt {retries + 1}/{RETRY_LIMIT})")
             time.sleep(retry_delay)
-            return fetch_with_retry(feed_url, category, retries + 1)
+            return fetch_with_retry(feed_url, retries + 1)
         else:
             logging.error(f"Feed {feed_url} failed after {RETRY_LIMIT} retries. Disabling for this session.")
             DISABLED_FEEDS.add(feed_url)
@@ -112,46 +111,71 @@ def load_feeds(rss_feeds, update_progress):
         update_progress (function): Function to update the loading progress.
 
     Returns:
-        dict: The RSS feeds for further use, or None if no feeds are available.
+        dict: The RSS feeds for further use, or an empty dict if no feeds are available.
     """
     if not rss_feeds:
         logging.error("RSS feeds are None. Cannot load feeds.")
-        return None
+        return {}
 
     total_feeds = sum(len(feeds) for feeds in rss_feeds.values())
-    loaded_feeds = [0]
-    loaded_data = {}
-    threads = []
+    loaded_feeds = [0]  # Track how many feeds are successfully processed
+    loaded_data = {}  # Stores data for successfully fetched feeds
+    threads = []  # Holds the threads for parallel feed fetching
+
+    logging.info(f"Starting feed loading. Total feeds: {total_feeds}")
 
     def update_progress_callback(feed, category):
         """
         Callback to update progress bar after each feed is processed and store the data.
         """
+        nonlocal loaded_data
         if category not in loaded_data:
             loaded_data[category] = []
-        if feed:
-            loaded_data[category].append(feed)
 
+        # Append feed data if it's valid, otherwise log warning
+        if feed:
+            logging.debug(f"Appending feed to category {category}: {feed}")
+            loaded_data[category].append(feed)
+        else:
+            logging.warning(f"No feed data to append for category {category}")
+
+        # Update progress after each feed is processed
         loaded_feeds[0] += 1
         progress = (loaded_feeds[0] / total_feeds) * 100
-        update_progress(progress)
+        update_progress(progress, f"Loading feeds... {int(progress)}%")
 
-    def fetch_and_store_feed(feed, category):
-        fetched_feed = fetch_with_retry(feed, category)
+    def fetch_and_store_feed(feed_url, category):
+        """
+        Function to fetch a feed, and store its result in the correct category.
+        """
+        logging.debug(f"Fetching feed from URL: {feed_url} in category: {category}")
+        fetched_feed = fetch_with_retry(feed_url)
         update_progress_callback(fetched_feed, category)
 
     # Create threads for each feed and start fetching
     for category, feeds in rss_feeds.items():
-        for feed in feeds:
-            thread = threading.Thread(target=fetch_and_store_feed, args=(feed, category))
+        logging.info(f"Loading feeds for category: {category}")
+        for feed_url in feeds:
+            thread = threading.Thread(target=fetch_and_store_feed, args=(feed_url, category))
             threads.append(thread)
             thread.start()
 
-    # Wait for all threads to finish
+    # Wait for all threads to finish, with a timeout to avoid indefinite waits
     for thread in threads:
-        thread.join()
+        thread.join(timeout=10)
+        if thread.is_alive():
+            logging.warning(f"Thread {thread.name} is taking too long to finish.")
 
-    return loaded_data if loaded_feeds[0] > 0 else None
+    # Filter out categories where all feeds failed
+    valid_categories = {k: v for k, v in loaded_data.items() if v}
+
+    # If no valid data was loaded, log and return an empty dict
+    if not valid_categories:
+        logging.error("No valid feeds were loaded. Returning empty data.")
+        return {}
+
+    logging.info(f"Successfully loaded {len(valid_categories)} feed categories. Loaded data: {valid_categories}")
+    return valid_categories
 
 def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
     """
@@ -162,19 +186,25 @@ def update_feed(rss_feeds, content_frame, root, category_name, sentiment_frame):
         logging.info(f"Fetching feeds for category: {category_name}")
 
         for feed_url in rss_feeds:
-            feed = fetch_with_retry(feed_url, category_name)
+            feed = fetch_with_retry(feed_url)
             if feed:
                 feed_entries.extend(feed.entries[:3])  # Limit to 3 stories per feed
+                logging.debug(f"Added {len(feed.entries[:3])} entries from {feed_url} to {category_name}")
+            else:
+                logging.warning(f"No entries retrieved from {feed_url}")
 
+        # If no entries were fetched, display a placeholder
         if not feed_entries:
             logging.warning(f"No entries retrieved for category: {category_name}")
             display_placeholder_message(content_frame, "No stories available")
         else:
+            logging.info(f"Adding entries to feed queue for {category_name}")
             feed_queue.put((category_name, feed_entries))
 
     def show_next_story():
         try:
             category, entries = feed_queue.get_nowait()
+            logging.debug(f"Displaying next story for {category_name} with {len(entries)} entries.")
             if category == category_name and entries:
                 story = entries.pop(0)
                 description = sanitize_html(getattr(story, 'description', 'No description available'))
