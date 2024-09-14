@@ -1,210 +1,196 @@
 """
-ui/gui.py
+gui.py
 
-This module handles the creation and setup of the main graphical user interface (GUI)
-for the StreamPulse application. It defines the layout, background, widgets, and
-custom sections for displaying news feeds, stock tickers, and other dynamic data.
+This module sets up the main graphical user interface (GUI) for the StreamPulse application. 
+It organizes various sections of the application window, including the news story display, 
+global statistics, and a stock ticker. The interface dynamically displays content based on 
+RSS feed data and stock market prices retrieved from external sources.
 
-Functions:
-    setup_main_frame - Initializes the main layout of the application and arranges the various sections.
-    load_background_image - Loads and applies a background image to the central widget.
-    apply_shadow_effect - Adds a shadow effect to a given widget for visual enhancement.
-    create_news_sections - Dynamically creates news sections based on the feed data provided.
-    add_stats_and_clock_widgets - Adds statistics and world clock widgets to the layout.
-    create_stock_ticker_widget - Creates a stock ticker widget displaying stock prices dynamically.
+Key Functions:
+    - setup_main_frame: Sets up the main layout of the application, organizing the news 
+      stories, stats sidebar, and stock ticker.
+    - create_header_frame: Builds the header section containing the app logo and live time.
+    - create_footer_ticker: Displays a scrolling ticker with live stock prices.
+    - format_stock_data: Formats the stock data for the ticker display.
+    - display_news_stories: Displays news stories from the loaded RSS feeds.
+
+Dependencies:
+    - PyQt5 for UI components and layouts.
+    - Other UI modules such as stats_widgets, stock_ticker, and story_display.
+    - Logging for tracking application events and errors.
+
+This module is tightly integrated with the loading screen and fetchers to ensure that 
+the data loaded is displayed in an interactive and dynamic interface.
 """
 
-import os
 import logging
-from PyQt5.QtWidgets import QVBoxLayout, QLabel, QFrame, QGridLayout, QWidget, QGraphicsDropShadowEffect
-from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QScrollArea
 from PyQt5.QtCore import Qt
 from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
-from ui.stock_ticker import create_stock_ticker_widget, StockTicker  # Import the stock ticker widget
-from utils.threading import run_with_callback
+from ui.stock_ticker import StockTicker
+from ui.story_display import clear_and_display_story  # Import the story display logic
+from PyQt5.QtGui import QFont
 
-def setup_main_frame(root, feeds_data, stock_data):
+# Set up basic logging
+logging.basicConfig(level=logging.INFO)
+
+
+def setup_main_frame(window, feeds_data, stock_data):
     """
-    Sets up the main GUI layout for the StreamPulse application.
+    Sets up the main frame of the application, organizing different sections for news,
+    global stats, and a stock ticker.
+    
+    Args:
+        window (QMainWindow): The main application window.
+        feeds_data (dict): The RSS feeds data loaded from loading_screen.py.
+        stock_data (dict): Stock price data loaded from loading_screen.py.
+    """
+    logging.info("Setting up main frame layout...")
+
+    # Central widget that holds all the layout
+    central_widget = QWidget(window)
+    window.setCentralWidget(central_widget)
+
+    # Main layout for the application
+    main_layout = QVBoxLayout(central_widget)
+    central_widget.setStyleSheet("background-color: #1e1e1e;")  # Darker background for a modern look
+
+    # HEADER: Logo + Live Time
+    header_frame = create_header_frame(window)
+    if header_frame.layout() is None:
+        header_frame.setLayout(QHBoxLayout())  # Ensure layout is only set once
+    main_layout.addWidget(header_frame)
+
+    # MAIN CONTENT: News Stories and Sidebar
+    content_layout = QHBoxLayout()
+
+    # News stories section (with scroll area for multiple stories)
+    news_scroll = QScrollArea()
+    news_section = QFrame()
+    news_section.setStyleSheet("background-color: rgba(34, 34, 34, 0.8); border: 1px solid #333; padding: 20px; border-radius: 15px;")
+    news_scroll.setWidgetResizable(True)
+    news_scroll.setWidget(news_section)
+
+    if news_section.layout() is None:
+        news_section.setLayout(QVBoxLayout())  # Check and set layout
+
+    content_layout.addWidget(news_scroll, stretch=2)
+
+    # Display the news stories from feeds_data using story_display
+    display_news_stories(news_section, feeds_data)
+
+    # Right Sidebar: Stats + World Clock
+    sidebar_layout = QVBoxLayout()
+
+    # Global Stats Widget
+    global_stats = create_global_stats_widget()
+    sidebar_layout.addWidget(global_stats)
+
+    sidebar_frame = QFrame()
+    sidebar_frame.setLayout(sidebar_layout)
+    sidebar_frame.setStyleSheet("background-color: rgba(28, 28, 28, 0.8); padding: 20px; border-left: 1px solid #333; border-radius: 15px;")
+    
+    if sidebar_frame.layout() is None:
+        sidebar_frame.setLayout(sidebar_layout)  # Ensure the sidebar layout is set only once
+    
+    content_layout.addWidget(sidebar_frame, stretch=1)
+
+    main_layout.addLayout(content_layout)
+
+    # FOOTER: Scrolling Ticker for Stock Data
+    stock_ticker_widget = create_footer_ticker(stock_data)
+    if stock_ticker_widget.layout() is None:
+        stock_ticker_widget.setLayout(QVBoxLayout())  # Ensure layout is set
+    main_layout.addWidget(stock_ticker_widget)
+
+    window.showFullScreen()
+
+
+def create_header_frame(window):
+    """
+    Creates the header bar that contains the app logo and the current time.
+    It mimics a cable news-style header.
 
     Args:
-        root (QWidget): The main window or parent widget for the application.
-        feeds_data (dict): Loaded RSS feed data passed from the loading screen.
-        stock_data (dict): Loaded stock price data passed from the loading screen.
+        window (QMainWindow): The main application window.
 
     Returns:
-        QWidget: The central widget containing the main frame layout.
+        QFrame: The header frame.
     """
-    logging.debug("Setting up main frame...")
+    header_frame = QFrame()
+    header_layout = QHBoxLayout(header_frame)
+    header_frame.setStyleSheet("background-color: rgba(153, 0, 0, 0.9); padding: 10px; border-bottom: 2px solid #111;")
 
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    bg_image_path = os.path.join(project_root, 'images', 'bg.png')
+    # Logo
+    logo_label = QLabel("StreamPulse")
+    logo_label.setFont(QFont("Helvetica", 28, QFont.Bold))
+    logo_label.setStyleSheet("color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);")
+    header_layout.addWidget(logo_label, alignment=Qt.AlignLeft)
 
-    central_widget = QWidget(root)
-    root.setCentralWidget(central_widget)
+    return header_frame
 
-    layout = QGridLayout(central_widget)
-    layout.setSpacing(20)  # Adjusted for better spacing
 
-    # Load the background image
-    load_background_image(central_widget, layout, bg_image_path)
-
-    # Create the news sections
-    create_news_sections(layout, root, feeds_data)
-
-    # Add the stats, clock, and other widgets
-    add_stats_and_clock_widgets(layout, central_widget)
-
-    # Stock ticker at the bottom, spanning across the full window width
-    stock_ticker_frame = create_stock_ticker_widget()  # Create the ticker widget
-    stock_ticker_frame.setFixedHeight(50)  # Adjust height for better visibility
-    stock_ticker_frame.setStyleSheet(""" 
-        background-color: rgba(0, 0, 0, 0.8); 
-        border-radius: 5px;
-        color: white;
-        font-size: 16px;
-    """)  # Ensure it has high contrast
-    layout.addWidget(stock_ticker_frame, 5, 0, 1, 6, alignment=Qt.AlignBottom)  # Anchored at the bottom
-
-    # Ensure the stock ticker is always at the bottom
-    layout.setRowStretch(4, 1)
-
-    # If stock data is available, update the stock ticker
-    stock_ticker = stock_ticker_frame.findChild(StockTicker)
-    if stock_ticker and stock_data:
-        stock_text = "  |  ".join([f"{symbol}: {price}" for symbol, price in stock_data.items()])
-        stock_ticker.set_ticker_text(stock_text)
-
-    logging.debug("Main frame setup complete.")
-    return central_widget
-
-def load_background_image(central_widget, layout, bg_image_path):
+def create_footer_ticker(stock_data):
     """
-    Loads the background image and applies it to the main layout.
+    Creates the footer ticker that displays scrolling stock prices.
 
     Args:
-        central_widget (QWidget): The central widget for the background image.
-        layout (QGridLayout): The layout to add the background image.
-        bg_image_path (str): The file path to the background image.
+        stock_data (dict): Stock price data to display in the ticker.
 
     Returns:
-        None
+        StockTicker: The StockTicker widget with stock data.
     """
-    if os.path.exists(bg_image_path):
-        try:
-            bg_image = QPixmap(bg_image_path)
-            bg_label = QLabel(central_widget)
-            bg_label.setPixmap(bg_image)
-            bg_label.setScaledContents(True)
-            layout.addWidget(bg_label, 0, 0, 5, 6)  # Span across the entire grid
-            logging.info("Background image loaded successfully.")
-        except Exception as e:
-            logging.error(f"Error loading background image: {e}")
-            central_widget.setStyleSheet("background-color: #2c3e50;")
-    else:
-        central_widget.setStyleSheet("background-color: #2c3e50;")
+    footer_frame = QFrame()
+    footer_frame.setStyleSheet("background-color: rgba(23, 162, 184, 0.8); padding: 0px; margin: 0px; border-radius: 5px;")
 
-def apply_shadow_effect(widget):
+    footer_layout = QVBoxLayout(footer_frame)
+    stock_ticker = StockTicker(footer_frame)  # Correct instance of StockTicker
+    ticker_text = format_stock_data(stock_data)
+    stock_ticker.set_ticker_text(ticker_text)  # Populate ticker with live stock data
+
+    footer_layout.addWidget(stock_ticker)
+
+    return footer_frame
+
+
+def format_stock_data(stock_data):
     """
-    Applies a shadow effect to a given widget.
+    Formats the stock data for the ticker text.
 
     Args:
-        widget (QWidget): The widget to which the shadow effect is applied.
+        stock_data (dict): Dictionary of stock symbols and their current prices.
 
     Returns:
-        None
+        str: Formatted string for the ticker text.
     """
-    shadow = QGraphicsDropShadowEffect()
-    shadow.setBlurRadius(20)
-    shadow.setXOffset(5)
-    shadow.setYOffset(5)
-    shadow.setColor(QColor(0, 0, 0, 160))
-    widget.setGraphicsEffect(shadow)
+    ticker_text = ""
+    for symbol, price in stock_data.items():
+        ticker_text += f"{symbol}: {price} | "
+    return ticker_text.strip(" | ")
 
-def create_news_sections(layout, root, feeds_data):
+
+def display_news_stories(news_section, feeds_data):
     """
-    Creates the news section widgets and adds them to the layout.
+    Displays the news stories using the story_display module.
 
     Args:
-        layout (QGridLayout): The layout to add the news section frames.
-        root (QWidget): The main window or parent widget.
-        feeds_data (dict): The news feeds data to populate the sections.
-
-    Returns:
-        None
+        news_section (QWidget): The layout where the news stories will be displayed.
+        feeds_data (dict): The RSS feeds data containing the news stories.
     """
-    if feeds_data is None:
-        logging.error("Feeds data is None. Cannot create news sections.")
-        return
+    logging.info("Displaying news stories...")
 
-    categories = [
-        ("General", "general"),
-        ("Financial", "financial"),
-        ("Video Games", "video_games"),
-        ("Science & Tech", "science_tech"),
-        ("Health & Environment", "health_environment"),
-        ("Entertainment", "entertainment"),
-    ]
+    sentiment_frame = QFrame(news_section)
+    sentiment_layout = QVBoxLayout(sentiment_frame)
 
-    for i, (category_name, internal_category) in enumerate(categories):
-        section_frame = QFrame(root)
-        section_frame.setStyleSheet(""" 
-            background-color: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            padding: 15px;
-            color: white;
-        """)
-        apply_shadow_effect(section_frame)
-        section_frame.setFixedSize(320, 180)
+    for category, feeds in feeds_data.items():
+        for feed in feeds:
+            for entry in feed.entries:
+                story = {
+                    "title": entry.get("title", "No Title"),
+                    "description": entry.get("description", "No Description"),
+                    "link": entry.get("link", "#"),
+                    "media_content": entry.get("media_content", [{}])
+                }
+                clear_and_display_story(news_section, story, sentiment_frame)  # Use story_display logic
 
-        layout.addWidget(section_frame, i // 3, i % 3, alignment=Qt.AlignTop)
-
-        label = QLabel(f"{category_name} News", section_frame)
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet(""" 
-            font-size: 18px;
-            font-weight: bold;
-            color: #ecf0f1;
-            padding-bottom: 5px;
-            background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #3498db, stop: 1 #2ecc71);
-            border-radius: 5px;
-        """)
-
-        content_layout = QVBoxLayout(section_frame)
-        content_layout.addWidget(label)
-
-        content_frame = QWidget(section_frame)
-        content_layout.addWidget(content_frame)
-
-        # Check if the category exists in feeds_data before trying to access it
-        if internal_category in feeds_data:
-            # Populate the section with the feeds data for that category
-            logging.info(f"Populating {category_name} with news feeds.")
-        else:
-            logging.warning(f"No data found for {category_name}")
-
-def add_stats_and_clock_widgets(layout, central_widget):
-    """
-    Adds the statistics and clock widgets to the layout.
-
-    Args:
-        layout (QGridLayout): The layout to add the statistics and clock widgets.
-        central_widget (QWidget): The main parent widget.
-
-    Returns:
-        None
-    """
-    stats_clock_frame = QFrame(central_widget)
-    stats_clock_frame.setStyleSheet(""" 
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 10px;
-    """)
-    apply_shadow_effect(stats_clock_frame)
-
-    stats_clock_layout = QVBoxLayout(stats_clock_frame)
-    stats_clock_frame.setFixedWidth(320)  # Restrict width to 320
-    layout.addWidget(stats_clock_frame, 0, 3, 2, 1)
-
-    stats_clock_layout.addWidget(create_global_stats_widget())
-    stats_clock_layout.addWidget(create_world_clock_widget())
+    news_section.setLayout(sentiment_layout)

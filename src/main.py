@@ -121,36 +121,42 @@ class StreamPulseApp(QMainWindow):
         Args:
             event: The close event triggered when the user attempts to close the application.
         """
-        reply = QMessageBox.question(self, 'Confirmation',
-                                     'Are you sure you want to quit?',
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        try:
+            reply = QMessageBox.question(self, 'Confirmation',
+                                         'Are you sure you want to quit?',
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
-        if reply == QMessageBox.Yes:
-            logging.info("Closing application.")
-            logging.info("Shutting down thread pool executor.")
-            shutdown_executor()  # Ensure threads are stopped
+            if reply == QMessageBox.Yes:
+                logging.info("Closing application.")
+                logging.info("Shutting down thread pool executor.")
+                shutdown_executor()  # Ensure threads are stopped
 
-            # Ensure all background threads are stopped before closing
-            self.close_all_threads()
+                # Ensure all background threads are stopped before closing
+                self.close_all_threads()
 
-            event.accept()
-        else:
-            event.ignore()
+                event.accept()
+            else:
+                event.ignore()
+        except Exception as e:
+            logging.error(f"Error during application shutdown: {e}", exc_info=True)
 
     def close_all_threads(self):
         """
         Gracefully close all background threads, including the loading screen worker.
         """
-        logging.info("Waiting for all threads to complete...")
+        try:
+            logging.info("Waiting for all threads to complete...")
 
-        if self.threads_running:
-            if hasattr(self, 'loading_screen'):
-                logging.info("Closing the loading screen if still open.")
-                self.loading_screen.close()
+            if self.threads_running:
+                if hasattr(self, 'loading_screen'):
+                    logging.info("Closing the loading screen if still open.")
+                    self.loading_screen.close()
 
-        # Flag that all threads have completed
-        self.threads_running = False
-        logging.info("All threads have completed.")
+            # Flag that all threads have completed
+            self.threads_running = False
+            logging.info("All threads have completed.")
+        except Exception as e:
+            logging.error(f"Error closing threads: {e}", exc_info=True)
 
 
 # Main entry point for the application

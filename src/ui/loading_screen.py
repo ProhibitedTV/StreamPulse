@@ -13,16 +13,12 @@ Key Features:
 """
 
 import logging
-import json
-import os
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
 from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QThread
-from api.fetchers import fetch_rss_feed, fetch_stock_price
+from api.fetchers import initialize_feeds, fetch_rss_feed, fetch_stock_price, STOCKS
 from utils.threading import run_with_callback
 
 logging.basicConfig(level=logging.INFO)
-
-RSS_FEED_FILE = os.path.join(os.path.dirname(__file__), 'rss_feeds.json')
 
 class RSSFeedLoader(QThread):
     """
@@ -66,13 +62,10 @@ class StockDataLoader(QThread):
     stock_data_signal = pyqtSignal(dict)  # Signal emitted when stock data is loaded
 
     def run(self):
-        stocks = [
-            "AAPL", "GOOGL", "MSFT", "AMZN", "META", "TSLA", "NFLX", "NVDA", "AMD", "INTC"
-        ]
         stock_data = {}
-        total_stocks = len(stocks)
+        total_stocks = len(STOCKS)  # Use the full list of stock symbols from fetchers.py
 
-        for i, symbol in enumerate(stocks):
+        for i, symbol in enumerate(STOCKS):
             try:
                 price = fetch_stock_price(symbol)
                 stock_data[symbol] = price
@@ -184,10 +177,9 @@ class LoadingScreen(QMainWindow):
         Initiates the loading of data by running the load_data_and_complete function in a background thread.
         """
         logging.info("Starting data loading process.")
-        rss_feeds = self.load_rss_feeds()
-
+        
         # Start the RSS feeds loader thread
-        self.feeds_loader = RSSFeedLoader(rss_feeds)
+        self.feeds_loader = RSSFeedLoader(initialize_feeds())
         self.feeds_loader.progress_signal.connect(self.update_progress)
         self.feeds_loader.data_loaded_signal.connect(self.on_feeds_loaded)
         self.feeds_loader.start()
@@ -197,18 +189,6 @@ class LoadingScreen(QMainWindow):
         self.stock_loader.progress_signal.connect(self.update_progress)
         self.stock_loader.stock_data_signal.connect(self.on_stock_data_received)
         self.stock_loader.start()
-
-    def load_rss_feeds(self):
-        """
-        Loads the RSS feed configuration from the JSON file.
-        """
-        try:
-            with open(RSS_FEED_FILE, 'r') as file:
-                rss_feeds = json.load(file)
-                return rss_feeds
-        except Exception as e:
-            logging.error(f"Error loading RSS feeds configuration: {e}")
-            return {}
 
     def on_feeds_loaded(self, feeds_data):
         """
