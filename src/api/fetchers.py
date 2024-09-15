@@ -264,15 +264,20 @@ def sanitize_html(html_content):
 def load_feeds_from_file():
     """
     Loads the RSS feed URLs from a JSON file located in the 'src/ui/' directory.
+    It supports feed grouping by categories, which is flattened to provide a single list of URLs.
 
     Returns:
-        list: A list of feed URLs or an empty list if loading fails.
+        list: A flattened list of feed URLs or an empty list if loading fails.
     """
     file_path = os.path.join(os.path.dirname(__file__), '../ui/rss_feeds.json')  # File path is handled inside the function
     
     try:
         with open(file_path, 'r') as file:
-            feeds = json.load(file).get('feeds', [])
+            feed_data = json.load(file)
+            
+            # Flatten the feed URLs from all categories
+            feeds = [url for category in feed_data.values() for url in category]
+            
             return feeds
     except (FileNotFoundError, json.JSONDecodeError) as e:
         logging.error(f"Error loading feeds from {file_path}: {e}")
@@ -304,13 +309,38 @@ def fetch_all_feeds(feed_urls):
 def initialize_feeds():
     """
     Initializes the RSS feeds by loading them from the file and fetching their content.
-
-    Returns:
-        dict: Dictionary containing all feed data fetched from the URLs.
+    Handles cases where the feed file is empty, malformed, or contains invalid feeds.
+    Returns a dict with feed data, indexed by URL.
     """
     feed_urls = load_feeds_from_file()
-    if not feed_urls:
-        logging.error("No feeds loaded.")
-        return {}
     
-    return fetch_all_feeds(feed_urls)
+    if not feed_urls:
+        logging.error("No feeds loaded. The rss_feeds.json file may be empty or incorrectly formatted.")
+        return {}
+
+    logging.info(f"Loaded {len(feed_urls)} feed URLs from file.")
+
+    feeds_data = {}
+
+    # Fetch feeds
+    for url in feed_urls:
+        try:
+            logging.info(f"Fetching feed from URL: {url}")
+            feed_data = fetch_rss_feed(url)
+
+            if 'error' in feed_data:
+                logging.error(f"Failed to fetch feed from {url}. Error: {feed_data['error']}")
+            else:
+                if isinstance(feed_data, dict) and 'entries' in feed_data:
+                    logging.info(f"Successfully fetched feed from {url} with {len(feed_data['entries'])} entries.")
+                    feeds_data[url] = feed_data  # RSS/Atom feed
+                elif isinstance(feed_data, list):
+                    logging.info(f"Successfully fetched JSON feed from {url} with {len(feed_data)} entries.")
+                    feeds_data[url] = {'entries': feed_data}  # JSON feed handling
+                else:
+                    logging.warning(f"Unexpected format received from {url}.")
+                    feeds_data[url] = feed_data  # Store as-is
+        except Exception as e:
+            logging.error(f"Error fetching feed from {url}: {e}")
+
+    return feeds_data

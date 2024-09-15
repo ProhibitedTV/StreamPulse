@@ -23,12 +23,11 @@ Functions:
 
 import os
 import logging
-from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QLabel, QWidget
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import QTimer, QSize, Qt, QMetaObject, Q_ARG
 from api.fetchers import fetch_image, sanitize_html
 from utils.threading import run_in_thread
-from utils.web import open_link
 from api.tts_engine import tts_queue
 from api.sentiment import analyze_text
 
@@ -39,6 +38,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 is_content_active = False
 
 MAX_DESCRIPTION_LENGTH = 300  # Limit for description length
+
+# Define the default image path at the top of your file
+default_image_path = os.path.join(os.path.dirname(__file__), '..', 'images', 'default.png')
 
 
 def clear_widgets(frame):
@@ -77,6 +79,47 @@ def display_story_card(story, parent_frame, sentiment_frame):
 
     logging.debug(f"Displaying story: {headline}")
 
+    # Headline label
+    headline_label = QLabel(headline, parent_frame)
+    headline_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
+    headline_label.setWordWrap(True)
+    headline_label.setMaximumWidth(400)  # Limit the width
+
+    # Display image
+    def display_image(image):
+        if not is_content_active:
+            return
+        image_label = QLabel(parent_frame)
+        pixmap = QPixmap(image).scaled(QSize(380, 180), aspectRatioMode=Qt.KeepAspectRatio)
+        image_label.setPixmap(pixmap)
+        image_label.setMaximumWidth(400)  # Limit the image width
+
+    def load_image():
+        try:
+            image = fetch_image(image_url, 380, 180)
+            if image:
+                display_image(image)
+            else:
+                logging.warning(f"Failed to load image from: {image_url}")
+                display_image(default_image_path)  # Reference to default image
+        except Exception as e:
+            logging.error(f"Error fetching image from {image_url}: {e}")
+            display_image(default_image_path)  # Reference to default image
+
+    # Description label
+    description_label = QLabel(description, parent_frame)
+    description_label.setStyleSheet("font-size: 14px; color: #b0b0b0;")
+    description_label.setWordWrap(True)
+    description_label.setMaximumWidth(400)  # Limit the width
+
+    # Source link label
+    source = story.get("link", "Unknown Source")
+    source_label = QLabel(f"<a href='{source}'>Read more</a>", parent_frame)
+    source_label.setOpenExternalLinks(True)
+    source_label.setStyleSheet("color: blue; text-decoration: underline;")
+    source_label.setMaximumWidth(400)  # Limit the width
+
+    # Sentiment analysis (asynchronous)
     def analyze_sentiment():
         if not is_content_active:
             return
@@ -99,50 +142,11 @@ def display_story_card(story, parent_frame, sentiment_frame):
 
     run_in_thread(analyze_sentiment)
 
-    layout = QVBoxLayout(parent_frame)
-    
-    headline_label = QLabel(headline, parent_frame)
-    headline_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-    headline_label.setWordWrap(True)
-    layout.addWidget(headline_label)
+    # Run image loading in the background
+    load_image()
 
-    # Display image
-    def display_image(image):
-        if not is_content_active:
-            return
-        image_label = QLabel(parent_frame)
-
-        # Use a default image from the correct path
-        default_image_path = os.path.join(os.path.dirname(__file__), '..', 'images', 'default.png')
-        
-        pixmap = QPixmap(image).scaled(QSize(380, 180), aspectRatioMode=Qt.KeepAspectRatio)
-        QMetaObject.invokeMethod(image_label, "setPixmap", Q_ARG(QPixmap, pixmap))
-        layout.addWidget(image_label)
-
-    def load_image():
-        try:
-            image = fetch_image(image_url, 380, 180)
-            if image:
-                display_image(image)
-            else:
-                logging.warning(f"Failed to load image from: {image_url}")
-                display_image(default_image_path)  # Reference to default image
-        except Exception as e:
-            logging.error(f"Error fetching image from {image_url}: {e}")
-            display_image(default_image_path)  # Reference to default image
-
-    # Display description
-    description_label = QLabel(description, parent_frame)
-    description_label.setStyleSheet("font-size: 14px; color: #b0b0b0;")
-    description_label.setWordWrap(True)
-    layout.addWidget(description_label)
-
-    # Display source link
-    source = story.get("link", "Unknown Source")
-    source_label = QLabel(f"<a href='{source}'>Read more</a>", parent_frame)
-    source_label.setOpenExternalLinks(True)
-    source_label.setStyleSheet("color: blue; text-decoration: underline;")
-    layout.addWidget(source_label)
+    # Return the widgets to be added to the layout in `gui.py`
+    return headline_label, description_label, source_label
 
 
 def clear_and_display_story(content_frame, story, sentiment_frame):
@@ -160,7 +164,10 @@ def clear_and_display_story(content_frame, story, sentiment_frame):
     clear_widgets(sentiment_frame)
     is_content_active = True  # Activate new content
 
-    display_story_card(story, content_frame, sentiment_frame)
+    headline_label, description_label, source_label = display_story_card(story, content_frame, sentiment_frame)
+
+    # The actual layout assignment and widget addition happens in `gui.py`
+    return headline_label, description_label, source_label
 
 
 def fade_in_story(content_frame, story, sentiment_frame):
@@ -173,7 +180,7 @@ def fade_in_story(content_frame, story, sentiment_frame):
         sentiment_frame (QWidget): Frame to display the sentiment analysis result.
     """
     logging.info(f"Displaying story: {story.get('title', 'No title available')}")
-    clear_and_display_story(content_frame, story, sentiment_frame)
+    headline_label, description_label, source_label = clear_and_display_story(content_frame, story, sentiment_frame)
 
     # Add fade-in effect
     fade_frame = QWidget(content_frame)
@@ -188,4 +195,4 @@ def fade_in_story(content_frame, story, sentiment_frame):
 
     fade()
 
-import os
+    return headline_label, description_label, source_label

@@ -24,11 +24,11 @@ the data loaded is displayed in an interactive and dynamic interface.
 """
 
 import logging
-from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QScrollArea
+from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QScrollArea, QDesktopWidget
 from PyQt5.QtCore import Qt
 from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
 from ui.stock_ticker import StockTicker
-from ui.story_display import clear_and_display_story  # Import the story display logic
+from ui.story_display import clear_and_display_story
 from PyQt5.QtGui import QFont
 
 # Set up basic logging
@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 def setup_main_frame(window, feeds_data, stock_data):
     """
     Sets up the main frame of the application, organizing different sections for news,
-    global stats, and a stock ticker.
+    global stats, a world clock, and a stock ticker.
     
     Args:
         window (QMainWindow): The main application window.
@@ -47,9 +47,17 @@ def setup_main_frame(window, feeds_data, stock_data):
     """
     logging.info("Setting up main frame layout...")
 
+    # Get screen dimensions
+    screen_geometry = QDesktopWidget().availableGeometry(window)
+    screen_width = screen_geometry.width()
+    screen_height = screen_geometry.height()
+
     # Central widget that holds all the layout
     central_widget = QWidget(window)
     window.setCentralWidget(central_widget)
+    
+    # Set maximum size for the central widget to avoid overflow
+    central_widget.setMaximumSize(screen_width, screen_height)
 
     # Main layout for the application
     main_layout = QVBoxLayout(central_widget)
@@ -74,6 +82,9 @@ def setup_main_frame(window, feeds_data, stock_data):
     if news_section.layout() is None:
         news_section.setLayout(QVBoxLayout())  # Check and set layout
 
+    # Set a maximum width for the news section to avoid it being too wide
+    news_section.setMaximumWidth(screen_width // 2)  # Limit to half the screen width
+
     content_layout.addWidget(news_scroll, stretch=2)
 
     # Display the news stories from feeds_data using story_display
@@ -86,10 +97,17 @@ def setup_main_frame(window, feeds_data, stock_data):
     global_stats = create_global_stats_widget()
     sidebar_layout.addWidget(global_stats)
 
+    # World Clock Widget
+    world_clock = create_world_clock_widget()
+    sidebar_layout.addWidget(world_clock)
+
     sidebar_frame = QFrame()
     sidebar_frame.setLayout(sidebar_layout)
     sidebar_frame.setStyleSheet("background-color: rgba(28, 28, 28, 0.8); padding: 20px; border-left: 1px solid #333; border-radius: 15px;")
     
+    # Set a maximum width for the sidebar to control its size
+    sidebar_frame.setMaximumWidth(screen_width // 4)  # Limit sidebar to 1/4th of the screen
+
     if sidebar_frame.layout() is None:
         sidebar_frame.setLayout(sidebar_layout)  # Ensure the sidebar layout is set only once
     
@@ -171,26 +189,23 @@ def format_stock_data(stock_data):
 
 def display_news_stories(news_section, feeds_data):
     """
-    Displays the news stories using the story_display module.
-
+    Displays news stories from feeds_data in the news section.
     Args:
-        news_section (QWidget): The layout where the news stories will be displayed.
-        feeds_data (dict): The RSS feeds data containing the news stories.
+        news_section (QWidget): The section to display the stories.
+        feeds_data (dict): The parsed RSS feed data.
     """
     logging.info("Displaying news stories...")
 
-    sentiment_frame = QFrame(news_section)
-    sentiment_layout = QVBoxLayout(sentiment_frame)
+    for url, feed in feeds_data.items():
+        # Get entries from the feed
+        for entry in feed.get('entries', []):
+            story = {
+                "title": entry.get("title", "No Title"),
+                "description": entry.get("description", "No Description"),
+                "link": entry.get("link", "#"),
+                "media_content": entry.get("media_content", [{}])
+            }
+            # Use a method to render the story (e.g., a card or text)
+            clear_and_display_story(news_section, story)
 
-    for category, feeds in feeds_data.items():
-        for feed in feeds:
-            for entry in feed.entries:
-                story = {
-                    "title": entry.get("title", "No Title"),
-                    "description": entry.get("description", "No Description"),
-                    "link": entry.get("link", "#"),
-                    "media_content": entry.get("media_content", [{}])
-                }
-                clear_and_display_story(news_section, story, sentiment_frame)  # Use story_display logic
-
-    news_section.setLayout(sentiment_layout)
+    news_section.update()
