@@ -1,211 +1,154 @@
 """
-gui.py
+ui/gui.py
 
-This module sets up the main graphical user interface (GUI) for the StreamPulse application. 
-It organizes various sections of the application window, including the news story display, 
-global statistics, and a stock ticker. The interface dynamically displays content based on 
-RSS feed data and stock market prices retrieved from external sources.
+This module defines the main graphical user interface (GUI) for the StreamPulse application.
+It sets up the main frame, including the layout of news categories, stories, stock ticker, and global statistics.
+Integrates with story display, sentiment analysis, and stock ticker modules to handle story transitions,
+narration, and stock updates.
 
-Key Functions:
-    - setup_main_frame: Sets up the main layout of the application, organizing the news 
-      stories, stats sidebar, and stock ticker.
-    - create_header_frame: Builds the header section containing the app logo and live time.
-    - create_footer_ticker: Displays a scrolling ticker with live stock prices.
-    - format_stock_data: Formats the stock data for the ticker display.
-    - display_news_stories: Displays news stories from the loaded RSS feeds.
+Key Features:
+- Displays a 3x2 grid of news categories.
+- Cycles through stories in each category, narrating one story at a time.
+- Integrates sentiment and bias analysis for each story using Ollama.
+- Displays a stock ticker at the bottom of the screen.
+- Provides global statistics such as U.S. National Debt and CO2 emissions.
+- Displays a live world clock.
 
-Dependencies:
-    - PyQt5 for UI components and layouts.
-    - Other UI modules such as stats_widgets, stock_ticker, and story_display.
-    - Logging for tracking application events and errors.
-
-This module is tightly integrated with the loading screen and fetchers to ensure that 
-the data loaded is displayed in an interactive and dynamic interface.
+Functions:
+- setup_main_frame: Initializes the main GUI and layout.
+- display_news_stories: Displays stories in a grid of categories.
+- rotate_through_categories: Handles automatic story rotation and narration.
 """
 
+import asyncio
 import logging
-from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QScrollArea, QDesktopWidget
-from PyQt5.QtCore import Qt
-from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow
+from PyQt5.QtCore import QTimer
+from ui.story_display import display_category_grid, fade_in_category_grid
+from api.sentiment import analyze_text
+from api.tts_engine import add_to_tts_queue
 from ui.stock_ticker import StockTicker
-from ui.story_display import clear_and_display_story
-from PyQt5.QtGui import QFont
+from ui.stats_widgets import create_global_stats_widget, create_world_clock_widget
 
-# Set up basic logging
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 
+class MainWindow(QMainWindow):
+    def __init__(self, feeds_data, stock_data):
+        super().__init__()
+        self.setWindowTitle("StreamPulse News")
+        self.setStyleSheet("background-color: #2c3e50; color: white;")
+        self.feeds_data = feeds_data  # RSS feeds data loaded in loading_screen.py
+        self.stock_data = stock_data  # Stock data loaded in loading_screen.py
+        self.current_category = 0  # To track which category we're currently displaying
+        self.current_story_index = {}  # To track the current story index for each category
 
-def setup_main_frame(window, feeds_data, stock_data):
-    """
-    Sets up the main frame of the application, organizing different sections for news,
-    global stats, a world clock, and a stock ticker.
-    
-    Args:
-        window (QMainWindow): The main application window.
-        feeds_data (dict): The RSS feeds data loaded from loading_screen.py.
-        stock_data (dict): Stock price data loaded from loading_screen.py.
-    """
-    logging.info("Setting up main frame layout...")
+        self.setup_main_frame()
 
-    # Get screen dimensions
-    screen_geometry = QDesktopWidget().availableGeometry(window)
-    screen_width = screen_geometry.width()
-    screen_height = screen_geometry.height()
+    def setup_main_frame(self):
+        """
+        Sets up the main layout of the application, including the 3x2 grid of news categories,
+        stock ticker, global statistics, and world clock.
+        """
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
 
-    # Central widget that holds all the layout
-    central_widget = QWidget(window)
-    window.setCentralWidget(central_widget)
-    
-    # Set maximum size for the central widget to avoid overflow
-    central_widget.setMaximumSize(screen_width, screen_height)
+        # Main layout with sidebar for stats and clock
+        self.main_layout = QHBoxLayout(self.central_widget)
 
-    # Main layout for the application
-    main_layout = QVBoxLayout(central_widget)
-    central_widget.setStyleSheet("background-color: #1e1e1e;")  # Darker background for a modern look
+        # Left-side layout for news grid and stock ticker
+        left_layout = QVBoxLayout()
+        self.main_layout.addLayout(left_layout)
 
-    # HEADER: Logo + Live Time
-    header_frame = create_header_frame(window)
-    if header_frame.layout() is None:
-        header_frame.setLayout(QHBoxLayout())  # Ensure layout is only set once
-    main_layout.addWidget(header_frame)
+        # Create a frame for the news grid
+        self.news_grid_frame = QFrame(self.central_widget)
+        left_layout.addWidget(self.news_grid_frame)
 
-    # MAIN CONTENT: News Stories and Sidebar
-    content_layout = QHBoxLayout()
+        # Create label to show sentiment analysis below the news grid
+        self.sentiment_label = QLabel("Sentiment Analysis: Loading...", self.central_widget)
+        self.sentiment_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white; padding: 10px;")
+        left_layout.addWidget(self.sentiment_label)
 
-    # News stories section (with scroll area for multiple stories)
-    news_scroll = QScrollArea()
-    news_section = QFrame()
-    news_section.setStyleSheet("background-color: rgba(34, 34, 34, 0.8); border: 1px solid #333; padding: 20px; border-radius: 15px;")
-    news_scroll.setWidgetResizable(True)
-    news_scroll.setWidget(news_section)
+        # Add the stock ticker at the bottom
+        self.stock_ticker = StockTicker(self.central_widget)
+        left_layout.addWidget(self.stock_ticker)
 
-    if news_section.layout() is None:
-        news_section.setLayout(QVBoxLayout())  # Check and set layout
+        # Right-side layout for global stats and clock
+        right_layout = QVBoxLayout()
+        self.main_layout.addLayout(right_layout)
 
-    # Set a maximum width for the news section to avoid it being too wide
-    news_section.setMaximumWidth(screen_width // 2)  # Limit to half the screen width
+        # Add global statistics widget
+        global_stats_widget = create_global_stats_widget()
+        right_layout.addWidget(global_stats_widget)
 
-    content_layout.addWidget(news_scroll, stretch=2)
+        # Add world clock widget
+        world_clock_widget = create_world_clock_widget()
+        right_layout.addWidget(world_clock_widget)
 
-    # Display the news stories from feeds_data using story_display
-    display_news_stories(news_section, feeds_data)
+        # Start rotating through categories
+        self.rotate_through_categories()
 
-    # Right Sidebar: Stats + World Clock
-    sidebar_layout = QVBoxLayout()
+    def display_news_stories(self):
+        """
+        Displays stories in each category's grid slot. Cycles through stories for each category.
+        """
+        categories = list(self.feeds_data.keys())
+        
+        if not categories:
+            logging.error("No categories found in feed data.")
+            return
 
-    # Global Stats Widget
-    global_stats = create_global_stats_widget()
-    sidebar_layout.addWidget(global_stats)
+        # Display category grid in the news grid frame asynchronously
+        asyncio.create_task(fade_in_category_grid(self.news_grid_frame, self.feeds_data))
 
-    # World Clock Widget
-    world_clock = create_world_clock_widget()
-    sidebar_layout.addWidget(world_clock)
+        # Select a story to perform sentiment analysis
+        category = categories[self.current_category]
 
-    sidebar_frame = QFrame()
-    sidebar_frame.setLayout(sidebar_layout)
-    sidebar_frame.setStyleSheet("background-color: rgba(28, 28, 28, 0.8); padding: 20px; border-left: 1px solid #333; border-radius: 15px;")
-    
-    # Set a maximum width for the sidebar to control its size
-    sidebar_frame.setMaximumWidth(screen_width // 4)  # Limit sidebar to 1/4th of the screen
+        # Initialize the current story index if not already set
+        if category not in self.current_story_index:
+            self.current_story_index[category] = 0
 
-    if sidebar_frame.layout() is None:
-        sidebar_frame.setLayout(sidebar_layout)  # Ensure the sidebar layout is set only once
-    
-    content_layout.addWidget(sidebar_frame, stretch=1)
+        # Get the list of stories for the current category
+        stories = self.feeds_data.get(category, [])
+        if not stories:
+            logging.warning(f"No stories found for category: {category}")
+            return
 
-    main_layout.addLayout(content_layout)
+        # Get the current story for the category
+        story_index = self.current_story_index[category]
 
-    # FOOTER: Scrolling Ticker for Stock Data
-    stock_ticker_widget = create_footer_ticker(stock_data)
-    if stock_ticker_widget.layout() is None:
-        stock_ticker_widget.setLayout(QVBoxLayout())  # Ensure layout is set
-    main_layout.addWidget(stock_ticker_widget)
+        # Add a safeguard to avoid KeyError
+        if story_index >= len(stories):
+            logging.error(f"Story index {story_index} out of range for category {category}.")
+            return
 
-    window.showFullScreen()
+        story = stories[story_index]
 
+        # Update TTS engine to narrate the story
+        headline = story.get("title", "No title available")
+        add_to_tts_queue(f"Reading story from {category}: {headline}")
 
-def create_header_frame(window):
-    """
-    Creates the header bar that contains the app logo and the current time.
-    It mimics a cable news-style header.
+        # Perform sentiment analysis and display result
+        analyze_text(story.get("description", ""), self.news_grid_frame, self.sentiment_label)
 
-    Args:
-        window (QMainWindow): The main application window.
+        # Move to the next story in the category
+        self.current_story_index[category] = (story_index + 1) % len(stories)
 
-    Returns:
-        QFrame: The header frame.
-    """
-    header_frame = QFrame()
-    header_layout = QHBoxLayout(header_frame)
-    header_frame.setStyleSheet("background-color: rgba(153, 0, 0, 0.9); padding: 10px; border-bottom: 2px solid #111;")
+    def rotate_through_categories(self):
+        """
+        Rotates through the news categories, displaying one story at a time from each category.
+        """
+        categories = list(self.feeds_data.keys())
 
-    # Logo
-    logo_label = QLabel("StreamPulse")
-    logo_label.setFont(QFont("Helvetica", 28, QFont.Bold))
-    logo_label.setStyleSheet("color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);")
-    header_layout.addWidget(logo_label, alignment=Qt.AlignLeft)
+        if not categories:
+            logging.error("No categories available for rotation.")
+            return
 
-    return header_frame
+        # Rotate to the next category
+        self.current_category = (self.current_category + 1) % len(categories)
+        
+        # Display stories in the new category
+        self.display_news_stories()
 
-
-def create_footer_ticker(stock_data):
-    """
-    Creates the footer ticker that displays scrolling stock prices.
-
-    Args:
-        stock_data (dict): Stock price data to display in the ticker.
-
-    Returns:
-        StockTicker: The StockTicker widget with stock data.
-    """
-    footer_frame = QFrame()
-    footer_frame.setStyleSheet("background-color: rgba(23, 162, 184, 0.8); padding: 0px; margin: 0px; border-radius: 5px;")
-
-    footer_layout = QVBoxLayout(footer_frame)
-    stock_ticker = StockTicker(footer_frame)  # Correct instance of StockTicker
-    ticker_text = format_stock_data(stock_data)
-    stock_ticker.set_ticker_text(ticker_text)  # Populate ticker with live stock data
-
-    footer_layout.addWidget(stock_ticker)
-
-    return footer_frame
-
-
-def format_stock_data(stock_data):
-    """
-    Formats the stock data for the ticker text.
-
-    Args:
-        stock_data (dict): Dictionary of stock symbols and their current prices.
-
-    Returns:
-        str: Formatted string for the ticker text.
-    """
-    ticker_text = ""
-    for symbol, price in stock_data.items():
-        ticker_text += f"{symbol}: {price} | "
-    return ticker_text.strip(" | ")
-
-
-def display_news_stories(news_section, feeds_data):
-    """
-    Displays news stories from feeds_data in the news section.
-    Args:
-        news_section (QWidget): The section to display the stories.
-        feeds_data (dict): The parsed RSS feed data.
-    """
-    logging.info("Displaying news stories...")
-
-    for url, feed in feeds_data.items():
-        # Get entries from the feed
-        for entry in feed.get('entries', []):
-            story = {
-                "title": entry.get("title", "No Title"),
-                "description": entry.get("description", "No Description"),
-                "link": entry.get("link", "#"),
-                "media_content": entry.get("media_content", [{}])
-            }
-            # Use a method to render the story (e.g., a card or text)
-            clear_and_display_story(news_section, story)
-
-    news_section.update()
+        # Set a timer to rotate to the next category after 10 seconds
+        QTimer.singleShot(10000, self.rotate_through_categories)

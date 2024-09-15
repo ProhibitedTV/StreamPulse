@@ -115,11 +115,15 @@ def create_global_stats_widget():
 
     def update_us_debt():
         """Updates the U.S. National Debt label with fetched data."""
+        if not global_stats_widget.isVisible():  # Ensure the widget is still visible before updating
+            return
         us_debt = fetch_us_debt()
         us_debt_label.setText(f"US National Debt: {us_debt}")
 
     def update_global_co2_emissions():
         """Updates the Global CO2 Emissions label with fetched data."""
+        if not global_stats_widget.isVisible():  # Ensure the widget is still visible before updating
+            return
         global_emission = fetch_global_co2_emissions()
         co2_emission_label.setText(f"Global CO2 Emissions: {global_emission}")
 
@@ -171,13 +175,17 @@ def create_world_clock_widget():
 
     def update_time():
         """Updates the time for each city."""
+        if not world_clock_widget.isVisible():  # Ensure the widget is still visible before updating
+            return
+
         now_utc = datetime.now(pytz.utc)
         for city, tz in cities.items():
+            if city not in time_labels:
+                continue
             local_time = now_utc.astimezone(timezone(tz))
             time_string = local_time.strftime('%Y-%m-%d %H:%M:%S')
-
-            # Update the time label for the city
-            time_labels[city].setText(f"{city}: {time_string}")
+            if time_labels[city]:  # Check if the label still exists
+                time_labels[city].setText(f"{city}: {time_string}")
 
         # Refresh the time every second
         QTimer.singleShot(1000, update_time)

@@ -14,60 +14,50 @@ Key Features:
 
 import logging
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QThread
-from api.fetchers import initialize_feeds, fetch_rss_feed, fetch_stock_price, STOCKS
-from utils.threading import run_with_callback
+from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QThread, QTimer
+import asyncio
+from api.fetchers import initialize_feeds, fetch_stock_price, STOCKS
 
 logging.basicConfig(level=logging.INFO)
 
+
 class RSSFeedLoader(QThread):
     """
-    QThread class to load RSS feeds asynchronously.
+    QThread class to load RSS feeds asynchronously using asyncio.
     """
     progress_signal = pyqtSignal(int, str)  # Signal to emit progress updates
     data_loaded_signal = pyqtSignal(dict)  # Signal emitted when all feeds are loaded
 
-    def __init__(self, rss_feeds):
-        super().__init__()
-        self.rss_feeds = rss_feeds
-
     def run(self):
-        total_feeds = sum(len(feeds) for feeds in self.rss_feeds.values())
-        loaded_feeds = 0
-        result = {}
+        """
+        Runs the asynchronous feed loading process.
+        """
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        rss_feeds = loop.run_until_complete(initialize_feeds())
+        loop.close()
 
-        for category, feeds in self.rss_feeds.items():
-            result[category] = []
-            for feed_url in feeds:
-                try:
-                    logging.info(f"Fetching feed: {feed_url}")
-                    feed_data = fetch_rss_feed(feed_url)
-                    if "error" not in feed_data:
-                        result[category].append(feed_data)
-                except Exception as e:
-                    logging.error(f"Error loading feed {feed_url}: {e}")
-                
-                loaded_feeds += 1
-                progress = (loaded_feeds / total_feeds) * 50
-                self.progress_signal.emit(int(progress), f"Loaded {loaded_feeds}/{total_feeds} feeds")
-        
-        self.data_loaded_signal.emit(result)
+        self.data_loaded_signal.emit(rss_feeds)
 
 
 class StockDataLoader(QThread):
     """
-    QThread class to load stock data asynchronously.
+    QThread class to load stock data asynchronously using asyncio.
     """
     progress_signal = pyqtSignal(int, str)  # Signal to emit progress updates
     stock_data_signal = pyqtSignal(dict)  # Signal emitted when stock data is loaded
 
     def run(self):
         stock_data = {}
-        total_stocks = len(STOCKS)  # Use the full list of stock symbols from fetchers.py
+        total_stocks = len(STOCKS)
 
+        # Use the full list of stock symbols from fetchers.py
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         for i, symbol in enumerate(STOCKS):
             try:
-                price = fetch_stock_price(symbol)
+                price = loop.run_until_complete(fetch_stock_price(symbol))
                 stock_data[symbol] = price
             except Exception as e:
                 logging.error(f"Error fetching stock price for {symbol}: {e}")
@@ -76,6 +66,7 @@ class StockDataLoader(QThread):
             progress = 50 + ((i + 1) / total_stocks) * 50
             self.progress_signal.emit(int(progress), f"Loaded stock price for {symbol}")
 
+        loop.close()
         self.stock_data_signal.emit(stock_data)
 
 
@@ -179,7 +170,7 @@ class LoadingScreen(QMainWindow):
         logging.info("Starting data loading process.")
         
         # Start the RSS feeds loader thread
-        self.feeds_loader = RSSFeedLoader(initialize_feeds())
+        self.feeds_loader = RSSFeedLoader()
         self.feeds_loader.progress_signal.connect(self.update_progress)
         self.feeds_loader.data_loaded_signal.connect(self.on_feeds_loaded)
         self.feeds_loader.start()

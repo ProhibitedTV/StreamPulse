@@ -1,15 +1,15 @@
 """
 api/sentiment.py
 
-This module is responsible for performing sentiment analysis using a local Ollama instance.
-It includes functions to fetch available models, perform sentiment analysis, and update a 
+This module is responsible for performing sentiment and political bias analysis using a local Ollama instance.
+It includes functions to fetch available models, perform sentiment and political bias analysis, and update a 
 PyQt5-based user interface (UI) with the results. The module handles errors gracefully, logs 
 actions and issues, and provides feedback using a text-to-speech (TTS) engine.
 
 Functions:
     list_models - Fetches and returns a list of available models from Ollama.
-    analyze_text - Sends a sentiment analysis request to Ollama and updates the UI with the result.
-    update_ui - Ensures the PyQt5 UI is updated to reflect sentiment analysis results.
+    analyze_text - Sends a sentiment and bias analysis request to Ollama and updates the UI with the result.
+    update_ui - Ensures the PyQt5 UI is updated to reflect the analysis results.
 """
 
 import requests
@@ -65,19 +65,27 @@ def list_models():
         return "error"
 
 
-def analyze_text(text, root, label, model="llama3:latest", prompt_template="Analyze the sentiment: {text}", stream=False):
+def analyze_text(text, root, label, model="llama3:latest", prompt_template=None, stream=False):
     """
-    Sends a request to the local Ollama instance for text sentiment analysis and updates the PyQt5 UI.
+    Sends a request to the local Ollama instance for text analysis (sentiment and political bias)
+    and updates the PyQt5 UI.
 
     :param text: The input text for analysis.
     :param root: The PyQt5 root QWidget instance, used to update the UI.
-    :param label: The PyQt5 QLabel widget where the sentiment result will be displayed.
+    :param label: The PyQt5 QLabel widget where the sentiment and bias result will be displayed.
     :param model: The model to use for analysis (default is 'llama3:latest').
     :param prompt_template: The prompt template to send to the model.
     :param stream: Boolean indicating if streaming mode should be enabled. Default is False.
     :return: The analysis result from Ollama or 'neutral'/'error'/'model_error' in case of issues.
     """
-    logging.info(f"Starting sentiment analysis for text: {text[:50]}...")  # Log part of the text for reference
+    # Define the prompt template for analyzing sentiment and bias
+    if not prompt_template:
+        prompt_template = (
+            "Analyze the following text for sentiment (positive, negative, or neutral) and political bias "
+            "(left-wing or right-wing): {text}"
+        )
+    
+    logging.info(f"Starting sentiment and bias analysis for text: {text[:50]}...")  # Log part of the text for reference
 
     # Fetch the available models
     available_models = list_models()
@@ -104,17 +112,17 @@ def analyze_text(text, root, label, model="llama3:latest", prompt_template="Anal
     }
 
     try:
-        logging.info(f"Sending sentiment analysis request to model '{model}'...")
+        logging.info(f"Sending sentiment and bias analysis request to model '{model}'...")
         response = requests.post(url, json=data)
         response.raise_for_status()
 
         # Extract and clean the result
         result = response.json().get('response', 'neutral').strip().lower()
-        logging.info(f"Sentiment analysis result: {result}")
-        add_to_tts_queue(f"Sentiment analysis result: {result}")
+        logging.info(f"Sentiment and bias analysis result: {result}")
+        add_to_tts_queue(f"Sentiment and bias analysis result: {result}")
         
         # Update the UI with the result
-        update_ui(root, label, f"Sentiment analysis result: {result}")
+        update_ui(root, label, f"Sentiment and bias analysis result: {result}")
         return result
 
     except requests.ConnectionError:
@@ -139,7 +147,7 @@ def analyze_text(text, root, label, model="llama3:latest", prompt_template="Anal
         return "error"
 
     except Exception as e:
-        error_message = f"Unexpected error during sentiment analysis: {e}"
+        error_message = f"Unexpected error during sentiment and bias analysis: {e}"
         logging.error(error_message)
         add_to_tts_queue(error_message)
         update_ui(root, label, error_message)
@@ -148,7 +156,7 @@ def analyze_text(text, root, label, model="llama3:latest", prompt_template="Anal
 
 def update_ui(root, label, text):
     """
-    Ensures that the PyQt5 UI is updated with the sentiment result.
+    Ensures that the PyQt5 UI is updated with the sentiment and bias result.
 
     PyQt5 operates with event loops, so we need to ensure that UI updates occur 
     within the main thread using QMetaObject.invokeMethod to safely update widgets 

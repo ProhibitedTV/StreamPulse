@@ -10,20 +10,13 @@ from PyQt5.QtWidgets import QLabel, QHBoxLayout, QWidget
 from PyQt5.QtCore import QTimer, Qt, QEvent
 from PyQt5.QtGui import QFontMetrics
 from api.fetchers import fetch_stock_price, STOCKS  # Import fetchers and stock list
+import asyncio
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class StockTicker(QWidget):
-    """
-    A PyQt5 widget for displaying a horizontally scrolling stock ticker.
-
-    Attributes:
-        stock_label (QLabel): A label to display the scrolling stock prices.
-        ticker_text (str): The current stock price data as a string.
-        scroll_position (int): Tracks the current scroll position for the ticker.
-    """
     def __init__(self, parent=None):
         super(StockTicker, self).__init__(parent)
 
@@ -50,14 +43,18 @@ class StockTicker(QWidget):
         self.setFixedHeight(40)
         self.setAutoFillBackground(True)
 
-        # Fetch and update stock prices
-        self.update_ticker_text()
+        # Start fetching and updating stock prices asynchronously
+        asyncio.ensure_future(self.update_ticker_text())  # Properly awaiting the async update function
 
-    def update_ticker_text(self):
+    async def update_ticker_text(self):
         """
         Fetches the stock prices from the fetchers module and updates the ticker text.
         """
-        stock_data = {symbol: fetch_stock_price(symbol) for symbol in STOCKS}
+        stock_data = {}
+        for symbol in STOCKS:
+            price = await fetch_stock_price(symbol)  # Await the async fetch function
+            stock_data[symbol] = price
+
         self.set_ticker_text(format_stock_data(stock_data))
 
     def set_ticker_text(self, stock_text):

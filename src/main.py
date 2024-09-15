@@ -5,25 +5,19 @@ This is the entry point for the StreamPulse application. It initializes the appl
 displays a loading screen while RSS feeds and stock data are fetched asynchronously, 
 and sets up the main application window once the data has been loaded successfully. 
 It also manages the cleanup of background threads upon closing the application.
-
-Classes:
-    StreamPulseApp - Manages the overall application logic, including loading data, 
-                     starting the main window, and handling background threads.
-                     
-Functions:
-    main - Initializes and starts the PyQt application.
 """
 
 import sys
 import logging
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
 from ui.loading_screen import LoadingScreen  # Import the LoadingScreen class
-from ui.gui import setup_main_frame
+from ui.gui import MainWindow  # Import the MainWindow class
 from utils.threading import shutdown_executor  # Use the new threading module
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting StreamPulse application...")
+
 
 class StreamPulseApp(QMainWindow):
     """
@@ -56,13 +50,13 @@ class StreamPulseApp(QMainWindow):
     def start_application(self):
         """
         Initialize the main application window once the news feeds and stock data 
-        have finished loading. This function sets up the main frame of the application.
+        have finished loading. This function sets up the main window of the application.
         """
         logging.info("Starting the main application window.")
         try:
-            # Pass the loaded feeds_data and stock_data to the main frame setup
-            setup_main_frame(self, self.feeds_data or {}, self.stock_data or {})
-            self.showFullScreen()  # Ensure the main window is in full-screen mode after the setup
+            # Create the main window and pass the loaded feeds_data and stock_data to it
+            self.main_window = MainWindow(self.feeds_data or {}, self.stock_data or {})
+            self.main_window.showFullScreen()  # Ensure the main window is in full-screen mode
             self.repaint()  # Force repaint after loading
         except Exception as e:
             logging.error(f"Error occurred while starting the main application: {e}", exc_info=True)
