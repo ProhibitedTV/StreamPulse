@@ -46,16 +46,13 @@ class StreamPulseApp(QMainWindow):
         """
         super().__init__()
         self.setWindowTitle("StreamPulse - Dynamic News Display")
-        self.showFullScreen()
-
-        # Initialize a flag to track if threads are running
-        self.threads_running = True
+        self.threads_running = True  # Flag to track if threads are running
 
         # Placeholder for loaded data
         self.feeds_data = None
         self.stock_data = None
 
-        # Call loading screen logic
+        # Initialize the loading screen
         self.load_with_loading_screen()
 
         # Set close event handling
@@ -71,7 +68,14 @@ class StreamPulseApp(QMainWindow):
             # Create the main window and pass the loaded feeds_data and stock_data to it
             self.main_window = MainWindow(self.feeds_data or {}, self.stock_data or {})
             self.main_window.showFullScreen()  # Ensure the main window is in full-screen mode
+
+            # Explicitly close the loading screen to avoid overlap
+            if self.loading_screen:
+                logging.info("Closing the loading screen.")
+                self.loading_screen.close()
+
             self.repaint()  # Force repaint after loading
+            self.update()  # Ensure the window is updated and displayed properly
         except Exception as e:
             logging.error(f"Error occurred while starting the main application: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", "Failed to start the application. Please try again.")
@@ -84,7 +88,7 @@ class StreamPulseApp(QMainWindow):
         try:
             # Show loading screen and start loading feeds in the background using threading.py
             self.loading_screen = LoadingScreen(self.on_data_loaded)
-            self.loading_screen.show()
+            self.loading_screen.showFullScreen()
 
         except Exception as e:
             logging.error(f"Error occurred during loading process: {e}", exc_info=True)
@@ -100,21 +104,21 @@ class StreamPulseApp(QMainWindow):
         """
         logging.info("Data loading complete, processing data.")
         try:
-            # Ensure the result contains valid data
+            # Check if the result contains valid data
             if not result or not isinstance(result, dict):
-                raise ValueError("Invalid or empty data result.")
+                raise ValueError("No data was loaded or invalid data format.")
 
-            # Set loaded RSS feeds and stock data
-            self.feeds_data = result.get("rss_feeds")
-            self.stock_data = result.get("stock_data")
+            # Use the data loaded from the loading screen
+            self.feeds_data = result.get("rss_feeds", {})
+            self.stock_data = result.get("stock_data", {})
 
-            # Check for missing data and log if needed
+            # Log warnings if data is missing
             if not self.feeds_data:
-                logging.error("Failed to load RSS feeds data. No data received.")
+                logging.warning("Feeds data is missing, but continuing with the main window.")
             if not self.stock_data:
-                logging.error("Failed to load stock data. No data received.")
+                logging.warning("Stock data is missing, but continuing with the main window.")
 
-            # Start the main application with the real data
+            # Start the main application window with the loaded data
             self.start_application()
 
         except Exception as e:
@@ -136,11 +140,14 @@ class StreamPulseApp(QMainWindow):
 
             if reply == QMessageBox.Yes:
                 logging.info("Closing application.")
-                logging.info("Shutting down thread pool executor.")
                 shutdown_executor()  # Ensure threads are stopped
 
-                # Ensure all background threads are stopped before closing
+                # Ensure all background threads and windows are closed before closing the app
                 self.close_all_threads()
+                if hasattr(self, 'loading_screen'):
+                    self.loading_screen.close()  # Ensure the loading screen is closed
+                if hasattr(self, 'main_window'):
+                    self.main_window.close()  # Close the main window if open
 
                 event.accept()
             else:
@@ -156,8 +163,8 @@ class StreamPulseApp(QMainWindow):
             logging.info("Waiting for all threads to complete...")
 
             if self.threads_running:
-                if hasattr(self, 'loading_screen'):
-                    logging.info("Closing the loading screen if still open.")
+                if hasattr(self, 'loading_screen') and self.loading_screen.isVisible():
+                    logging.info("Closing the loading screen.")
                     self.loading_screen.close()
 
             # Flag that all threads have completed

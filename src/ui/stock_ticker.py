@@ -9,15 +9,20 @@ import logging
 from PyQt5.QtWidgets import QLabel, QHBoxLayout, QWidget
 from PyQt5.QtCore import QTimer, Qt, QEvent
 from PyQt5.QtGui import QFontMetrics
-from api.fetchers import fetch_stock_price, STOCKS  # Import fetchers and stock list
-import asyncio
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class StockTicker(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, stock_data, parent=None):
+        """
+        Initializes the stock ticker widget.
+
+        Args:
+            stock_data (dict): Dictionary of stock symbols and their current prices.
+            parent (QWidget): The parent widget.
+        """
         super(StockTicker, self).__init__(parent)
 
         # Initialize the label for displaying the stock ticker
@@ -43,18 +48,7 @@ class StockTicker(QWidget):
         self.setFixedHeight(40)
         self.setAutoFillBackground(True)
 
-        # Start fetching and updating stock prices asynchronously
-        asyncio.ensure_future(self.update_ticker_text())  # Properly awaiting the async update function
-
-    async def update_ticker_text(self):
-        """
-        Fetches the stock prices from the fetchers module and updates the ticker text.
-        """
-        stock_data = {}
-        for symbol in STOCKS:
-            price = await fetch_stock_price(symbol)  # Await the async fetch function
-            stock_data[symbol] = price
-
+        # Set the ticker text using the passed-in stock data
         self.set_ticker_text(format_stock_data(stock_data))
 
     def set_ticker_text(self, stock_text):
@@ -115,9 +109,12 @@ def format_stock_data(stock_data):
     return " | ".join([f"{symbol}: {price}" for symbol, price in stock_data.items()])
 
 
-def create_stock_ticker_widget():
+def create_stock_ticker_widget(stock_data):
     """
     Creates a stock ticker widget with the necessary layout and styling.
+
+    Args:
+        stock_data (dict): Dictionary of stock symbols and their current prices.
 
     Returns:
         QWidget: The stock ticker widget frame.
@@ -125,8 +122,8 @@ def create_stock_ticker_widget():
     stock_ticker_frame = QWidget()
     stock_ticker_frame.setStyleSheet("background-color: #17a2b8; padding: 0px; margin: 0px;")
 
-    # Create the StockTicker widget and add it to the stock ticker frame
-    stock_ticker = StockTicker(stock_ticker_frame)
+    # Create the StockTicker widget with the provided stock data and add it to the stock ticker frame
+    stock_ticker = StockTicker(stock_data, stock_ticker_frame)
 
     # Set up the layout
     layout = QHBoxLayout(stock_ticker_frame)

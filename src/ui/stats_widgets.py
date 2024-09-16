@@ -1,9 +1,23 @@
 """
-ui/stats_widgets.py
+stats_widgets.py
 
-This module provides widgets for displaying global statistics such as U.S. National Debt, Global CO2 Emissions,
-and a live world clock. These widgets are designed to integrate with the PyQt5 interface and update dynamically
-with real-time data.
+This module provides widgets for displaying real-time global statistics such as U.S. National Debt, 
+Global CO2 Emissions, and a live world clock. These widgets are designed to integrate with the PyQt5 
+interface and update dynamically through API calls.
+
+Key Features:
+- Fetches U.S. National Debt data from the U.S. Treasury API and displays it in a formatted label.
+- Fetches global CO2 emissions data from the World Bank API and displays it in a formatted label.
+- Provides a live world clock that updates every second for multiple cities and time zones.
+- Implements retries and error handling to ensure robustness when fetching data from APIs.
+- Utilizes background threads to fetch data asynchronously, avoiding blocking the UI.
+
+Functions:
+- fetch_with_retries: Fetches data from a given URL with retry logic for robustness.
+- fetch_us_debt: Retrieves the U.S. National Debt from the Treasury API.
+- fetch_global_co2_emissions: Retrieves global CO2 emissions from the World Bank API.
+- create_global_stats_widget: Creates and returns a PyQt5 widget to display global stats.
+- create_world_clock_widget: Creates and returns a PyQt5 widget to display a live world clock.
 """
 
 import logging
@@ -14,6 +28,7 @@ from PyQt5.QtCore import QTimer
 from pytz import timezone
 import pytz
 from utils.threading import run_in_thread
+import time
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,6 +37,33 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 US_DEBT_URL = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny"
 CO2_EMISSIONS_URL = "https://api.worldbank.org/v2/country/WLD/indicator/EN.ATM.CO2E.KT?format=json"
 
+def fetch_with_retries(url, params=None, retries=3, delay=2):
+    """
+    Fetches data from a given URL with retries.
+
+    Args:
+        url (str): The URL to fetch data from.
+        params (dict, optional): The parameters to pass with the request.
+        retries (int): Number of retries to attempt.
+        delay (int): Delay between retries.
+
+    Returns:
+        dict or None: The JSON response if successful, None otherwise.
+    """
+    for attempt in range(retries):
+        try:
+            logging.info(f"Fetching data from {url}, attempt {attempt + 1}...")
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logging.error(f"Error fetching data from {url}: {e}")
+            if attempt < retries - 1:
+                logging.info(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                logging.error(f"Failed to fetch data after {retries} attempts.")
+    return None
 
 def fetch_us_debt():
     """
@@ -38,13 +80,9 @@ def fetch_us_debt():
             "page[number]": 1,
             "page[size]": 1
         }
-        response = requests.get(US_DEBT_URL, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        data = fetch_with_retries(US_DEBT_URL, params=params)
 
-        logging.debug(f"U.S. National Debt API response: {data}")
-
-        if 'data' in data and len(data['data']) > 0:
+        if data and 'data' in data and len(data['data']) > 0:
             latest_debt = data['data'][0]['tot_pub_debt_out_amt']
             record_date = data['data'][0]['record_date']
             debt_formatted = f"${float(latest_debt):,.2f} (As of {record_date})"
@@ -53,10 +91,9 @@ def fetch_us_debt():
         else:
             logging.error("Debt data unavailable in the API response structure.")
             return "Data Unavailable"
-    except requests.RequestException as e:
-        logging.error(f"Error fetching U.S. national debt: {e}")
+    except Exception as e:
+        logging.error(f"Error processing U.S. national debt: {e}")
         return "Data Unavailable"
-
 
 def fetch_global_co2_emissions():
     """
@@ -67,13 +104,9 @@ def fetch_global_co2_emissions():
     """
     try:
         logging.info("Fetching global CO2 emissions data...")
-        response = requests.get(CO2_EMISSIONS_URL, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        data = fetch_with_retries(CO2_EMISSIONS_URL)
 
-        logging.debug(f"World Bank CO2 API full response: {data}")
-
-        if response.status_code == 200 and len(data) > 1 and 'value' in data[1][0]:
+        if data and len(data) > 1 and 'value' in data[1][0]:
             co2 = data[1][0]['value']
             co2_formatted = f"{co2:,} kt CO2" if co2 is not None else "Data Unavailable"
             logging.info(f"Fetched Global CO2 Emissions: {co2_formatted}")
@@ -81,18 +114,11 @@ def fetch_global_co2_emissions():
         else:
             logging.error("CO2 emissions data unavailable in the response or malformed.")
             return "Data Unavailable"
-    except requests.RequestException as e:
-        logging.error(f"Error fetching global CO2 emissions: {e}")
+    except Exception as e:
+        logging.error(f"Error processing global CO2 emissions: {e}")
         return "Data Unavailable"
 
-
 def create_global_stats_widget():
-    """
-    Creates and returns a widget containing global statistics such as U.S. National Debt and Global CO2 Emissions.
-
-    Returns:
-        QWidget: The global stats widget.
-    """
     logging.info("Setting up global statistics widget...")
 
     global_stats_widget = QWidget()
@@ -115,15 +141,11 @@ def create_global_stats_widget():
 
     def update_us_debt():
         """Updates the U.S. National Debt label with fetched data."""
-        if not global_stats_widget.isVisible():  # Ensure the widget is still visible before updating
-            return
         us_debt = fetch_us_debt()
         us_debt_label.setText(f"US National Debt: {us_debt}")
 
     def update_global_co2_emissions():
         """Updates the Global CO2 Emissions label with fetched data."""
-        if not global_stats_widget.isVisible():  # Ensure the widget is still visible before updating
-            return
         global_emission = fetch_global_co2_emissions()
         co2_emission_label.setText(f"Global CO2 Emissions: {global_emission}")
 
@@ -131,12 +153,16 @@ def create_global_stats_widget():
     run_in_thread(update_us_debt)
     run_in_thread(update_global_co2_emissions)
 
-    # Set up recurring updates every 60 seconds
-    QTimer.singleShot(60000, lambda: run_in_thread(update_us_debt))
-    QTimer.singleShot(60000, lambda: run_in_thread(update_global_co2_emissions))
+    # Set up recurring updates every 60 seconds using QTimer
+    debt_timer = QTimer()
+    debt_timer.timeout.connect(lambda: run_in_thread(update_us_debt))
+    debt_timer.start(60000)  # Update every 60 seconds
+
+    co2_timer = QTimer()
+    co2_timer.timeout.connect(lambda: run_in_thread(update_global_co2_emissions))
+    co2_timer.start(60000)  # Update every 60 seconds
 
     return global_stats_widget
-
 
 def create_world_clock_widget():
     """
@@ -167,7 +193,7 @@ def create_world_clock_widget():
     # Create labels for each city
     time_labels = {}
 
-    for city in cities:
+    for city, tz in cities.items():
         city_label = QLabel(f"{city}: Fetching...", world_clock_widget)
         city_label.setStyleSheet("font-size: 14px;")
         layout.addWidget(city_label)
@@ -175,17 +201,11 @@ def create_world_clock_widget():
 
     def update_time():
         """Updates the time for each city."""
-        if not world_clock_widget.isVisible():  # Ensure the widget is still visible before updating
-            return
-
         now_utc = datetime.now(pytz.utc)
         for city, tz in cities.items():
-            if city not in time_labels:
-                continue
             local_time = now_utc.astimezone(timezone(tz))
             time_string = local_time.strftime('%Y-%m-%d %H:%M:%S')
-            if time_labels[city]:  # Check if the label still exists
-                time_labels[city].setText(f"{city}: {time_string}")
+            time_labels[city].setText(f"{city}: {time_string}")
 
         # Refresh the time every second
         QTimer.singleShot(1000, update_time)

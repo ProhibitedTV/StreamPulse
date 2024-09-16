@@ -13,6 +13,7 @@ Functions:
     shutdown_tts - Shuts down the TTS engine and stops the TTS thread.
 """
 
+import asyncio
 import pyttsx3
 import queue
 import logging
@@ -59,9 +60,9 @@ def process_tts_queue():
             logging.error(f"Error processing TTS request: {e}")
             tts_queue.task_done()
 
-def add_to_tts_queue(text):
+async def add_to_tts_queue(text):
     """
-    Adds text to the TTS queue for processing by the TTS engine.
+    Asynchronously adds text to the TTS queue for processing by the TTS engine.
 
     Args:
         text (str): The text to be converted to speech.
@@ -73,7 +74,10 @@ def add_to_tts_queue(text):
         raise ValueError("TTS request text cannot be empty.")
     
     logging.info(f"Adding text to TTS queue: {text}")
-    tts_queue.put(text)
+    try:
+        tts_queue.put_nowait(text)  # Non-blocking queue addition
+    except queue.Full:
+        logging.error("TTS queue is full. Unable to add the request.")
 
 def start_tts_thread():
     """
