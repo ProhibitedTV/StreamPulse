@@ -1,23 +1,33 @@
 """
 main.py
 
-This is the entry point for the StreamPulse application. It initializes the application, 
-displays a loading screen while RSS feeds and stock data are fetched asynchronously, 
-and sets up the main application window once the data has been loaded successfully. 
-It also manages the cleanup of background threads upon closing the application.
+This is the entry point for the StreamPulse application. It initializes the PyQt5
+application and integrates it with the asyncio event loop using QEventLoop. The application 
+displays a loading screen while fetching RSS feeds and stock data asynchronously, and 
+then sets up the main window to display dynamic news and stock information.
+
+Key Features:
+- Displays a loading screen while fetching data in the background.
+- Integrates PyQt5 with asyncio to handle asynchronous operations within the PyQt event loop.
+- Dynamically loads RSS feed data and stock prices for the main application window.
+- Handles application lifecycle, including clean-up of threads upon exit.
+
+Classes:
+- StreamPulseApp: Main class managing the loading screen, data fetching, and initializing the main application window.
 """
 
 import sys
 import logging
+import asyncio
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
-from ui.loading_screen import LoadingScreen  # Import the LoadingScreen class
-from ui.gui import MainWindow  # Import the MainWindow class
-from utils.threading import shutdown_executor  # Use the new threading module
+from ui.loading_screen import LoadingScreen
+from ui.gui import MainWindow
+from utils.threading import shutdown_executor
+from qasync import QEventLoop
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting StreamPulse application...")
-
 
 class StreamPulseApp(QMainWindow):
     """
@@ -30,6 +40,10 @@ class StreamPulseApp(QMainWindow):
         threads_running (bool): Tracks whether threads are active.
     """
     def __init__(self):
+        """
+        Initializes the StreamPulse application, displays the loading screen, 
+        and begins data fetching processes.
+        """
         super().__init__()
         self.setWindowTitle("StreamPulse - Dynamic News Display")
         self.showFullScreen()
@@ -156,12 +170,18 @@ class StreamPulseApp(QMainWindow):
 # Main entry point for the application
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # Integrate asyncio event loop with PyQt's event loop using QEventLoop
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
+
     window = StreamPulseApp()
 
-    # Execute the PyQt application event loop
-    logging.info("Starting PyQt main loop.")
+    # Execute the PyQt and asyncio event loops concurrently
+    logging.info("Starting PyQt main loop with asyncio integration.")
     try:
-        exit_code = app.exec_()
+        with loop:
+            exit_code = loop.run_forever()
     except Exception as e:
         logging.error(f"An unexpected error occurred in the main loop: {e}", exc_info=True)
     finally:

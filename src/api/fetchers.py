@@ -15,10 +15,10 @@ Key Functions:
 - load_default_image: Loads a default image when image fetching fails.
 """
 
-
 import os
 import io
 import logging
+import ssl
 import aiohttp
 import feedparser
 import yfinance as yf
@@ -27,6 +27,7 @@ from PyQt5.QtGui import QPixmap
 from tenacity import retry, wait_exponential, stop_after_attempt
 import bleach
 import json
+import certifi
 
 # Constants
 RSS_FETCH_TIMEOUT = 15  # 15 seconds timeout for RSS fetching
@@ -46,12 +47,18 @@ alpha_vantage_failed = False
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
+# Create SSL context using certifi certificates
+ssl_context = ssl.create_default_context(cafile=certifi.where())
+
 # Async functions for fetching data
 async def fetch_rss_feed(feed_url):
     """
     Asynchronously fetches an RSS or Atom feed, handling different content types gracefully.
+    Ensures that SSL certificates are verified using the certifi package.
     """
-    async with aiohttp.ClientSession() as session:
+    ssl_context = aiohttp.TCPConnector(ssl=None, ssl_context=aiohttp.helpers.ssl_create_default_context(cafile=certifi.where()))
+    
+    async with aiohttp.ClientSession(connector=ssl_context) as session:
         try:
             async with session.get(feed_url, timeout=RSS_FETCH_TIMEOUT) as response:
                 content_type = response.headers.get("Content-Type", "").lower()
@@ -113,7 +120,7 @@ async def fetch_stock_price(symbol):
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(alpha_vantage_url, timeout=RSS_FETCH_TIMEOUT) as response:
+            async with session.get(alpha_vantage_url, timeout=RSS_FETCH_TIMEOUT, ssl=ssl_context) as response:
                 data = await response.json()
                 if "Global Quote" in data and "05. price" in data["Global Quote"]:
                     price = data["Global Quote"]["05. price"]
