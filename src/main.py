@@ -100,21 +100,21 @@ class StreamPulseApp(QMainWindow):
         """
         logging.info("Data loading complete, processing data.")
         try:
-            # Check if the result contains valid data
+            # Ensure the result contains valid data
             if not result or not isinstance(result, dict):
-                raise ValueError("No data was loaded or invalid data format.")
+                raise ValueError("Invalid or empty data result.")
 
-            # Default to empty dicts if data is missing
-            self.feeds_data = result.get("rss_feeds", {})
-            self.stock_data = result.get("stock_data", {})
+            # Set loaded RSS feeds and stock data
+            self.feeds_data = result.get("rss_feeds")
+            self.stock_data = result.get("stock_data")
 
-            # If feeds_data or stock_data is None, log and proceed with placeholders
+            # Check for missing data and log if needed
             if not self.feeds_data:
-                logging.warning("Feeds data is None or invalid, continuing with placeholders.")
+                logging.error("Failed to load RSS feeds data. No data received.")
             if not self.stock_data:
-                logging.warning("Stock data is None or invalid, continuing with placeholders.")
+                logging.error("Failed to load stock data. No data received.")
 
-            # Start the main application
+            # Start the main application with the real data
             self.start_application()
 
         except Exception as e:

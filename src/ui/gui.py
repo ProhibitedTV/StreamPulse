@@ -20,11 +20,10 @@ Functions:
 - rotate_through_categories: Handles automatic story rotation and narration.
 """
 
-import asyncio
 import logging
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow
 from PyQt5.QtCore import QTimer
-from ui.story_display import display_category_grid, fade_in_category_grid
+from ui.story_display import create_story_card, clear_widgets
 from api.sentiment import analyze_text
 from api.tts_engine import add_to_tts_queue
 from ui.stock_ticker import StockTicker
@@ -43,6 +42,7 @@ class MainWindow(QMainWindow):
         self.current_category = 0  # To track which category we're currently displaying
         self.current_story_index = {}  # To track the current story index for each category
 
+        # Initialize the main layout
         self.setup_main_frame()
 
     def setup_main_frame(self):
@@ -60,8 +60,10 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout()
         self.main_layout.addLayout(left_layout)
 
-        # Create a frame for the news grid
+        # Create a grid layout for the news categories
+        self.news_grid_layout = QGridLayout()
         self.news_grid_frame = QFrame(self.central_widget)
+        self.news_grid_frame.setLayout(self.news_grid_layout)
         left_layout.addWidget(self.news_grid_frame)
 
         # Create label to show sentiment analysis below the news grid
@@ -85,8 +87,37 @@ class MainWindow(QMainWindow):
         world_clock_widget = create_world_clock_widget()
         right_layout.addWidget(world_clock_widget)
 
+        # Populate the news grid with initial stories
+        self.update_news_grid()
+
         # Start rotating through categories
         self.rotate_through_categories()
+
+    def update_news_grid(self):
+        """
+        Updates the grid layout by populating it with story cards.
+        """
+        categories = list(self.feeds_data.keys())
+        
+        if not categories:
+            logging.warning("No categories available to display.")
+            return
+        
+        # Clear the grid first
+        clear_widgets(self.news_grid_frame)
+        
+        # Populate the grid with story cards from each category
+        row, col = 0, 0
+        for category in categories[:6]:  # Limit to 6 categories (3 rows x 2 columns)
+            stories = self.feeds_data.get(category, {}).get("entries", [])
+            if stories:
+                # Create a story card for the first story in each category
+                story_card = create_story_card(stories[0], self.news_grid_frame)
+                self.news_grid_layout.addWidget(story_card, row, col)
+                col += 1
+                if col > 1:  # Move to the next row after 2 columns
+                    col = 0
+                    row += 1
 
     def display_news_stories(self):
         """
@@ -98,9 +129,6 @@ class MainWindow(QMainWindow):
             logging.error("No categories found in feed data.")
             return
 
-        # Display category grid in the news grid frame asynchronously
-        asyncio.create_task(fade_in_category_grid(self.news_grid_frame, self.feeds_data))
-
         # Select a story to perform sentiment analysis
         category = categories[self.current_category]
 
@@ -109,17 +137,15 @@ class MainWindow(QMainWindow):
             self.current_story_index[category] = 0
 
         # Get the list of stories for the current category
-        stories = self.feeds_data.get(category, [])
+        stories = self.feeds_data.get(category, {}).get("entries", [])  # Ensure we're accessing 'entries'
         if not stories:
             logging.warning(f"No stories found for category: {category}")
             return
 
         # Get the current story for the category
         story_index = self.current_story_index[category]
-
-        # Add a safeguard to avoid KeyError
         if story_index >= len(stories):
-            logging.error(f"Story index {story_index} out of range for category {category}.")
+            logging.error(f"Story index {story_index} out of range for category: {category}")
             return
 
         story = stories[story_index]

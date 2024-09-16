@@ -3,11 +3,18 @@ api/fetchers.py
 
 This module provides asynchronous utilities for fetching data such as RSS feeds, stock prices, and images.
 It uses modern libraries like `aiohttp` for async HTTP requests, `feedparser` for RSS/Atom feed parsing,
-`yfinance` for retrieving stock prices, and `Pillow` for handling image manipulation. Additionally, it includes
-error handling mechanisms like retries using `tenacity` to ensure robustness in the face of network failures.
+`yfinance` for retrieving stock prices, and `Pillow` for handling image manipulation.
+
+Key Features:
+- Robust handling of image fetching and resizing, with transparent background management and a fallback to a default image if fetching fails.
+- Asynchronous RSS feed fetching and parsing, with improved error handling for malformed feeds or unexpected content types.
+- Asynchronous stock price retrieval using Alpha Vantage as the primary source and Yahoo Finance as a fallback.
+- Implements retries for stock price fetching with exponential backoff to handle transient errors.
+- Provides HTML sanitization to remove unsafe tags from descriptions.
+- Handles loading of RSS feed URLs from a JSON configuration file, and asynchronously fetches their contents.
 
 Key Functions:
-- fetch_rss_feed: Asynchronously fetches and parses RSS/Atom feeds, handling different content types gracefully.
+- fetch_rss_feed: Asynchronously fetches and parses RSS/Atom feeds, handling SSL issues and content type validation.
 - fetch_stock_price: Asynchronously retrieves real-time stock prices from Alpha Vantage, with a fallback to Yahoo Finance.
 - fetch_image: Asynchronously downloads and resizes images from URLs, with error handling and a fallback to a default image.
 - sanitize_html: Cleans HTML content, keeping only a safe set of tags for display purposes.
@@ -50,16 +57,15 @@ logging.basicConfig(level=logging.INFO)
 # Create SSL context using certifi certificates
 ssl_context = ssl.create_default_context(cafile=certifi.where())
 
-# Async functions for fetching data
+
 async def fetch_rss_feed(feed_url):
     """
-    Asynchronously fetches an RSS or Atom feed, handling different content types gracefully.
-    Ensures that SSL certificates are verified using the certifi package.
+    Asynchronously fetches an RSS or Atom feed, handling SSL certificates and content types.
     """
-    ssl_context = aiohttp.TCPConnector(ssl=None, ssl_context=aiohttp.helpers.ssl_create_default_context(cafile=certifi.where()))
-    
-    async with aiohttp.ClientSession(connector=ssl_context) as session:
-        try:
+    try:
+        # Create an aiohttp session with a valid SSL context
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(feed_url, timeout=RSS_FETCH_TIMEOUT) as response:
                 content_type = response.headers.get("Content-Type", "").lower()
 
@@ -70,21 +76,29 @@ async def fetch_rss_feed(feed_url):
                 ]
 
                 if "json" in content_type:
-                    return await response.json().get('feeds', {})
+                    data = await response.json()
+                    return data.get('feeds', {})  # Safely access feeds
+
                 elif any(valid_type in content_type for valid_type in valid_content_types):
                     content = await response.text()
                     feed = feedparser.parse(content)
                     if feed.bozo:
                         raise ValueError(f"Malformed feed data for {feed_url}")
+                    
+                    # Make sure the feed has entries
+                    if 'entries' not in feed or not feed['entries']:
+                        raise ValueError(f"No entries found in the feed: {feed_url}")
+
                     return feed
+
                 else:
                     logging.warning(f"Unexpected content type {content_type} for feed {feed_url}. Attempting to parse.")
                     content = await response.text()
                     return feedparser.parse(content)
 
-        except Exception as e:
-            logging.error(f"Error fetching feed from {feed_url}: {e}")
-            return {"error": str(e)}
+    except Exception as e:
+        logging.error(f"Error fetching feed from {feed_url}: {e}")
+        return {"error": str(e)}
 
 def fetch_from_yahoo_finance(symbol: str) -> str:
     """

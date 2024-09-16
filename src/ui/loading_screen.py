@@ -14,9 +14,9 @@ Key Features:
 
 import logging
 from PyQt5.QtWidgets import QVBoxLayout, QLabel, QProgressBar, QWidget, QMainWindow, QGraphicsOpacityEffect
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QThread, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QThread
 import asyncio
-from api.fetchers import initialize_feeds, fetch_stock_price, STOCKS
+from api import fetchers
 
 logging.basicConfig(level=logging.INFO)
 
@@ -30,14 +30,28 @@ class RSSFeedLoader(QThread):
 
     def run(self):
         """
-        Runs the asynchronous feed loading process.
+        Runs the asynchronous feed loading process and emits progress for each feed.
         """
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        rss_feeds = loop.run_until_complete(initialize_feeds())
+        feed_urls = fetchers.load_feeds_from_file()
+        total_feeds = len(feed_urls)
+        feeds_data = {}
+
+        for i, url in enumerate(feed_urls):
+            feed_data = loop.run_until_complete(fetchers.fetch_rss_feed(url))
+            if 'error' in feed_data:
+                logging.error(f"Failed to fetch feed from {url}. Error: {feed_data['error']}")
+            else:
+                feeds_data[url] = feed_data
+            
+            # Emit progress for each feed loaded
+            progress = (i + 1) / total_feeds * 50  # Keep total progress up to 50% for feeds
+            self.progress_signal.emit(int(progress), f"Loaded feed {i + 1} of {total_feeds}")
+
         loop.close()
 
-        self.data_loaded_signal.emit(rss_feeds)
+        self.data_loaded_signal.emit(feeds_data)
 
 
 class StockDataLoader(QThread):
@@ -49,21 +63,22 @@ class StockDataLoader(QThread):
 
     def run(self):
         stock_data = {}
-        total_stocks = len(STOCKS)
+        total_stocks = len(fetchers.STOCKS)
 
         # Use the full list of stock symbols from fetchers.py
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        for i, symbol in enumerate(STOCKS):
+        for i, symbol in enumerate(fetchers.STOCKS):
             try:
-                price = loop.run_until_complete(fetch_stock_price(symbol))
+                price = loop.run_until_complete(fetchers.fetch_stock_price(symbol))
                 stock_data[symbol] = price
             except Exception as e:
                 logging.error(f"Error fetching stock price for {symbol}: {e}")
                 stock_data[symbol] = "Error"
 
-            progress = 50 + ((i + 1) / total_stocks) * 50
+            # Emit progress for each stock loaded
+            progress = 50 + ((i + 1) / total_stocks) * 50  # Keep total progress 50-100% for stocks
             self.progress_signal.emit(int(progress), f"Loaded stock price for {symbol}")
 
         loop.close()
@@ -165,7 +180,7 @@ class LoadingScreen(QMainWindow):
 
     def start_loading_data(self):
         """
-        Initiates the loading of data by running the load_data_and_complete function in a background thread.
+        Initiates the loading of data by running the loaders in background threads.
         """
         logging.info("Starting data loading process.")
         
