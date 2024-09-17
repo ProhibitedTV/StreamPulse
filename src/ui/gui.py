@@ -8,7 +8,7 @@ a stock ticker, global statistics, sentiment analysis, and a world clock.
 Key Features:
 - Initializes and sets up the main window for displaying a 3x2 grid of news categories.
 - Integrates sentiment analysis and text-to-speech (TTS) functionality for the news stories.
-- Displays additional dynamic widgets like a stock ticker, global statistics, and a world clock.
+- Displays additional dynamic widgets like a stock ticker, global statistics, and world clock.
 - Handles the automatic rotation of news categories and story transitions.
 - Manages error handling for missing or invalid content from RSS feeds.
 
@@ -27,7 +27,7 @@ Functions:
 
 import logging
 import asyncio
-from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow, QSizePolicy, QScrollArea, QTextEdit
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow, QSizePolicy, QScrollArea, QTextEdit, QProgressBar
 from PyQt5.QtCore import QTimer
 from ui.story_display import create_story_card, clear_widgets
 from api.sentiment import analyze_text
@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.feeds_data = feeds_data  # RSS feeds data loaded in loading_screen.py
         self.stock_data = stock_data  # Stock data loaded in loading_screen.py
         self.current_story_index = {}  # To track the current story index for each category
+        self.progress_timers = {}  # Store progress timers for each category
 
         # Initialize the main layout
         self.news_grid_layout = None  # Ensure layout is defined
@@ -126,6 +127,38 @@ class MainWindow(QMainWindow):
 
         # Start rotating through stories in each category
         self.rotate_stories()
+        
+    def start_progress_bar(self, progress_bar, category, duration_seconds):
+        """
+        Starts updating the progress bar over the given duration (in seconds).
+        This function increments the progress bar at regular intervals.
+        """
+        progress_bar.setRange(0, 100)  # Set progress range from 0 to 100
+        progress_bar.setValue(0)  # Initialize progress bar at 0%
+        progress_interval = 1000  # Update every 1000 ms (1 second)
+
+        # Calculate how much progress to make per interval
+        increment = 100 / duration_seconds
+
+        def update_progress():
+            current_value = progress_bar.value()
+            new_value = current_value + increment
+            if new_value >= 100:
+                progress_bar.setValue(100)
+            else:
+                progress_bar.setValue(new_value)
+
+        # Stop any existing timer for this category
+        if category in self.progress_timers:
+            self.progress_timers[category].stop()
+
+        # Use a QTimer to update the progress bar every interval
+        progress_timer = QTimer(self)
+        progress_timer.timeout.connect(update_progress)
+        progress_timer.start(progress_interval)
+
+        # Store the new timer for this category
+        self.progress_timers[category] = progress_timer
 
     async def update_news_grid(self):
         """
@@ -168,14 +201,17 @@ class MainWindow(QMainWindow):
 
             # Set up initial story index and display the first story
             self.current_story_index[category] = 0
-            story_card, _ = await create_story_card(stories[0], category, self.news_grid_frame)
+            story_card, progress_bar = await create_story_card(stories[0], category, self.news_grid_frame)
             story_card.setFixedSize(580, 280)
 
             # Add the story card to the grid layout
             self.news_grid_layout.addWidget(story_card, row, col)
 
             # Store the widget reference for later updates
-            self.story_widgets[category] = (story_card, stories)
+            self.story_widgets[category] = (story_card, stories, progress_bar)
+
+            # Start progress bar for the first story
+            self.start_progress_bar(progress_bar, category, 30)
 
             # Update row and col for grid layout
             col += 1
@@ -187,7 +223,11 @@ class MainWindow(QMainWindow):
         """
         Rotates through the stories in each category every 30 seconds.
         """
-        for category, (story_card, stories) in self.story_widgets.items():
+        async def update_story_card(category, story_card, stories, progress_bar):
+            # Stop the current progress bar timer for this category
+            if category in self.progress_timers:
+                self.progress_timers[category].stop()
+
             # Update the story index for the category
             current_index = self.current_story_index.get(category, 0)
             next_index = (current_index + 1) % len(stories)
@@ -195,8 +235,21 @@ class MainWindow(QMainWindow):
 
             # Clear the current story card and update with the next story
             clear_widgets(story_card)
-            new_story_card, _ = asyncio.run(create_story_card(stories[next_index], category, story_card))
+            new_story_card, new_progress_bar = await create_story_card(stories[next_index], category, story_card)
             story_card.layout().addWidget(new_story_card)
 
-        # Rotate stories again after 30 seconds
-        QTimer.singleShot(30000, self.rotate_stories)
+            # Start the progress bar for this story
+            self.start_progress_bar(new_progress_bar, category, 30)  # 30 seconds per story
+
+        async def rotate_all_stories():
+            tasks = []
+            for category, (story_card, stories, progress_bar) in self.story_widgets.items():
+                # For each category, update the story card asynchronously
+                tasks.append(update_story_card(category, story_card, stories, progress_bar))
+            await asyncio.gather(*tasks)
+
+            # Rotate stories again after 30 seconds
+            QTimer.singleShot(30000, self.rotate_stories)
+
+        # Start the rotation
+        asyncio.ensure_future(rotate_all_stories())
