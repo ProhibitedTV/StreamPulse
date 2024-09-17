@@ -2,30 +2,33 @@
 ui/gui.py
 
 This module defines the main graphical user interface (GUI) for the StreamPulse application.
-It handles the layout and display of news categories, stock ticker, global statistics, and other
-dynamic content such as sentiment and bias analysis.
+It is responsible for rendering and managing the layout of various dynamic content such as news categories,
+a stock ticker, global statistics, sentiment analysis, and a world clock.
 
 Key Features:
-- Sets up the main window with a layout that includes a 3x2 grid of news categories.
-- Handles automatic story transitions and integrates sentiment analysis via Ollama.
-- Displays dynamic widgets like a stock ticker, global statistics, and a world clock.
-- Ensures the layout exists and fits within a 1080p display.
+- Initializes and sets up the main window for displaying a 3x2 grid of news categories.
+- Integrates sentiment analysis and text-to-speech (TTS) functionality for the news stories.
+- Displays additional dynamic widgets like a stock ticker, global statistics, and a world clock.
+- Handles the automatic rotation of news categories and story transitions.
+- Manages error handling for missing or invalid content from RSS feeds.
 
 Classes:
-- MainWindow: The main interface class that manages the display and layout of news, stock updates, 
-  and other widgets.
+- MainWindow: The main class that manages the GUI components, including news stories, stock data, 
+  and widgets such as sentiment analysis and the stock ticker.
 
 Functions:
-- setup_main_frame: Initializes the main GUI layout and ensures it fits within 1080p.
-- update_news_grid: Updates the grid with news stories once data is loaded.
-- display_news_stories: Cycles through stories in each category and performs sentiment analysis.
-- rotate_through_categories: Rotates between news categories, triggering story updates.
+- setup_main_frame: Sets up the primary layout, including the news grid, stock ticker, global stats, 
+  sentiment analysis, and world clock.
+- update_news_grid: Updates the grid with story cards populated with headlines, descriptions, and images.
+- display_news_stories: Cycles through stories in each category, integrates sentiment analysis, 
+  and updates the TTS engine.
+- rotate_through_categories: Rotates between different news categories and automatically refreshes stories.
 """
 
 import logging
 import asyncio
-from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow, QSizePolicy
-from PyQt5.QtCore import QTimer, QSize
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow, QSizePolicy, QScrollArea, QTextEdit
+from PyQt5.QtCore import QTimer
 from ui.story_display import create_story_card, clear_widgets
 from api.sentiment import analyze_text
 from api.tts_engine import add_to_tts_queue
@@ -38,57 +41,52 @@ logging.basicConfig(level=logging.INFO)
 class MainWindow(QMainWindow):
     """
     MainWindow is the main graphical interface for StreamPulse. It displays the news categories,
-    a stock ticker, and widgets like global stats and a world clock.
+    a stock ticker, and widgets like global stats, sentiment analysis, and a world clock.
     """
     def __init__(self, feeds_data, stock_data):
         super().__init__()
         self.setWindowTitle("StreamPulse News")
         self.setFixedSize(1920, 1080)  # Ensure window fits within 1080p display
-        self.setStyleSheet("background-color: #2c3e50; color: white;")
+        self.setStyleSheet("""
+            background-color: #2c3e50; color: white;
+            QFrame { background-color: #34495e; border-radius: 10px; }
+            QLabel { color: #ecf0f1; }
+        """)
         self.feeds_data = feeds_data  # RSS feeds data loaded in loading_screen.py
         self.stock_data = stock_data  # Stock data loaded in loading_screen.py
-        self.current_category = 0  # To track which category we're currently displaying
         self.current_story_index = {}  # To track the current story index for each category
 
         # Initialize the main layout
         self.news_grid_layout = None  # Ensure layout is defined
+        self.story_widgets = {}  # Store the story widgets to update later
         self.setup_main_frame()
 
     def setup_main_frame(self):
         """
         Sets up the main layout of the application, including the 3x2 grid of news categories,
-        stock ticker, global statistics, and world clock.
-        Ensures the layout fits within 1080p and widgets are properly sized.
+        stock ticker, global statistics, sentiment analysis, and world clock.
         """
         self.central_widget = QWidget(self)
         self.setCentralWidget(self.central_widget)
 
-        # Main layout with sidebar for stats and clock
-        self.main_layout = QHBoxLayout(self.central_widget)
+        # Main layout with sidebar for stats, sentiment, and clock
+        self.main_layout = QVBoxLayout(self.central_widget)  # Use vertical layout for main screen
+        content_layout = QHBoxLayout()  # Content section layout (left: news grid, right: stats)
 
-        # Left-side layout for news grid and stock ticker
+        # Left-side layout for news grid
         left_layout = QVBoxLayout()
-        self.main_layout.addLayout(left_layout, stretch=3)  # Add stretch to control layout space
+        content_layout.addLayout(left_layout, stretch=3)  # Add stretch to control layout space
 
         # Create a grid layout for the news categories
         self.news_grid_layout = QGridLayout()
         self.news_grid_frame = QFrame(self.central_widget)
+        self.news_grid_layout.setSpacing(15)
         self.news_grid_frame.setLayout(self.news_grid_layout)
         left_layout.addWidget(self.news_grid_frame)
 
-        # Create label to show sentiment analysis below the news grid
-        self.sentiment_label = QLabel("Sentiment Analysis: Loading...", self.central_widget)
-        self.sentiment_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white; padding: 8px;")
-        left_layout.addWidget(self.sentiment_label)
-
-        # Add the stock ticker at the bottom, adjust height, and pass the stock data to it
-        self.stock_ticker = create_stock_ticker_widget(self.stock_data)
-        self.stock_ticker.setFixedHeight(50)  # Make the stock ticker height smaller
-        left_layout.addWidget(self.stock_ticker)
-
-        # Right-side layout for global stats and clock
+        # Right-side layout for global stats, sentiment analysis, and world clock
         right_layout = QVBoxLayout()
-        self.main_layout.addLayout(right_layout, stretch=1)  # Smaller stretch for the right layout
+        content_layout.addLayout(right_layout, stretch=1)  # Smaller stretch for the right layout
 
         # Add global statistics widget
         global_stats_widget = create_global_stats_widget()
@@ -98,113 +96,107 @@ class MainWindow(QMainWindow):
         world_clock_widget = create_world_clock_widget()
         right_layout.addWidget(world_clock_widget)
 
-        # Ensure the stock ticker extends across the bottom of both layouts
-        self.stock_ticker.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Create a scrollable area for the sentiment widget
+        scroll_area = QScrollArea(self.central_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("border: none;")  # Remove border for clean look
+
+        # Add a text box inside the scrollable area for the sentiment analysis
+        self.sentiment_label = QTextEdit("Sentiment Analysis: Loading...", self.central_widget)
+        self.sentiment_label.setStyleSheet("""
+            font-size: 18px; font-weight: bold; padding: 15px; color: #3498db; 
+            background-color: #34495e; border-radius: 8px;
+        """)
+        self.sentiment_label.setReadOnly(True)  # Make the text box read-only
+
+        scroll_area.setWidget(self.sentiment_label)  # Add the text box to the scroll area
+        right_layout.addWidget(scroll_area)
+
+        # Add the content layout (left and right) to the main layout
+        self.main_layout.addLayout(content_layout)
+
+        # Stock ticker, positioned at the bottom and stretched across both left and right layouts
+        self.stock_ticker = create_stock_ticker_widget(self.stock_data)
+        self.stock_ticker.setFixedHeight(40)  # Adjust stock ticker height
+        self.stock_ticker.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # Ensure ticker spans full width
+        self.main_layout.addWidget(self.stock_ticker)  # Add the stock ticker to the main layout
 
         # Populate the news grid with initial stories
-        self.update_news_grid()
+        asyncio.ensure_future(self.update_news_grid())
 
-        # Start rotating through categories
-        self.rotate_through_categories()
+        # Start rotating through stories in each category
+        self.rotate_stories()
 
-    def update_news_grid(self):
+    async def update_news_grid(self):
         """
         Updates the grid layout by populating it with story cards.
-        This is triggered after the news data is loaded.
-        Ensures layout exists before modifying it.
+        Only one story per category will be displayed at a time.
         """
         if self.news_grid_layout is None:
             logging.error("News grid layout not initialized.")
             return
 
         categories = list(self.feeds_data.keys())
-        
         if not categories:
             logging.warning("No categories available to display.")
             return
-        
-        # Clear the grid first
-        clear_widgets(self.news_grid_frame)
 
-        # Populate the grid with story cards from each category
+        logging.info("Clearing existing widgets from the grid layout.")
+        clear_widgets(self.news_grid_frame)  # Clear any existing widgets
+
         row, col = 0, 0
-        for category in categories[:6]:  # Limit to 6 categories (3 rows x 2 columns)
-            stories = self.feeds_data.get(category, {}).get("entries", [])
-            if stories:
-                # Create a story card for the first story in each category
-                story_card = create_story_card(stories[0], self.news_grid_frame)
-                self.news_grid_layout.addWidget(story_card, row, col)
-                col += 1
-                if col > 1:  # Move to the next row after 2 columns
-                    col = 0
-                    row += 1
+        max_columns = 2  # Limit to 2 columns in the grid
 
-    async def display_news_stories(self):
-        """
-        Displays stories in each category's grid slot. Cycles through stories for each category.
-        Ensures the layout exists before accessing it. Asynchronous to leverage async analyze_text.
-        """
-        if self.news_grid_layout is None:
-            logging.error("News grid layout is not initialized.")
-            return
+        # Iterate through categories and fetch stories
+        for category in categories:
+            feeds = self.feeds_data.get(category, [])
+            if not isinstance(feeds, list):
+                logging.error(f"Feeds for category {category} are not a list: {feeds}")
+                continue  # Skip if the structure isn't valid
 
-        categories = list(self.feeds_data.keys())
-        
-        if not categories:
-            logging.error("No categories found in feed data.")
-            return
+            stories = []
+            for feed_dict in feeds:
+                feed_data = feed_dict.get('feed', {})
+                if not isinstance(feed_data, dict):
+                    logging.error(f"Feed data for URL {feed_dict.get('url')} is not a dictionary: {feed_data}")
+                    continue  # Skip this feed
+                stories.extend(feed_data.get('entries', []))
 
-        # Select a story to perform sentiment analysis
-        category = categories[self.current_category]
+            if not stories:
+                logging.warning(f"No stories found for category: {category}")
+                continue
 
-        # Initialize the current story index if not already set
-        if category not in self.current_story_index:
+            # Set up initial story index and display the first story
             self.current_story_index[category] = 0
+            story_card, _ = await create_story_card(stories[0], category, self.news_grid_frame)
+            story_card.setFixedSize(580, 280)
 
-        # Get the list of stories for the current category
-        stories = self.feeds_data.get(category, {}).get("entries", [])
-        if not stories:
-            logging.warning(f"No stories found for category: {category}")
-            return
+            # Add the story card to the grid layout
+            self.news_grid_layout.addWidget(story_card, row, col)
 
-        # Get the current story for the category
-        story_index = self.current_story_index[category]
-        if story_index >= len(stories):
-            logging.error(f"Story index {story_index} out of range for category: {category}")
-            return
+            # Store the widget reference for later updates
+            self.story_widgets[category] = (story_card, stories)
 
-        story = stories[story_index]
+            # Update row and col for grid layout
+            col += 1
+            if col >= max_columns:  # Move to next row after max columns
+                col = 0
+                row += 1
 
-        # Update TTS engine to narrate the story
-        headline = story.get("title", "No title available")
-        await add_to_tts_queue(f"Reading story from {category}: {headline}")
-
-        # Perform sentiment analysis asynchronously and display result
-        await analyze_text(story.get("description", ""), self.news_grid_frame, self.sentiment_label)
-
-        # Move to the next story in the category
-        self.current_story_index[category] = (story_index + 1) % len(stories)
-
-    def rotate_through_categories(self):
+    def rotate_stories(self):
         """
-        Rotates through the news categories, displaying one story at a time from each category.
-        Checks for layout existence before updating.
+        Rotates through the stories in each category every 30 seconds.
         """
-        if self.news_grid_layout is None:
-            logging.error("News grid layout is not initialized.")
-            return
+        for category, (story_card, stories) in self.story_widgets.items():
+            # Update the story index for the category
+            current_index = self.current_story_index.get(category, 0)
+            next_index = (current_index + 1) % len(stories)
+            self.current_story_index[category] = next_index
 
-        categories = list(self.feeds_data.keys())
+            # Clear the current story card and update with the next story
+            clear_widgets(story_card)
+            new_story_card, _ = asyncio.run(create_story_card(stories[next_index], category, story_card))
+            story_card.layout().addWidget(new_story_card)
 
-        if not categories:
-            logging.error("No categories available for rotation.")
-            return
-
-        # Rotate to the next category
-        self.current_category = (self.current_category + 1) % len(categories)
-
-        # Display stories in the new category asynchronously
-        asyncio.create_task(self.display_news_stories())
-
-        # Set a timer to rotate to the next category after 10 seconds
-        QTimer.singleShot(10000, self.rotate_through_categories)
+        # Rotate stories again after 30 seconds
+        QTimer.singleShot(30000, self.rotate_stories)

@@ -28,20 +28,17 @@ class RSSFeedLoader(QThread):
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        feed_urls = fetchers.load_feeds_from_file()
-        total_feeds = len(feed_urls)
-        feeds_data = {}
+        feeds_data = loop.run_until_complete(fetchers.initialize_feeds())  # Load structured data (category, URL, feed content)
+        total_feeds = sum(len(feeds) for feeds in feeds_data.values())
+        progress = 0
 
-        for i, url in enumerate(feed_urls):
-            feed_data = loop.run_until_complete(fetchers.fetch_rss_feed(url))
-            if 'error' in feed_data:
-                logging.error(f"Failed to fetch feed from {url}. Error: {feed_data['error']}")
-            else:
-                feeds_data[url] = feed_data
-
-            progress = (i + 1) / total_feeds * 50
-            self.progress_signal.emit(int(progress), f"Loaded feed {i + 1} of {total_feeds}")
-
+        for category, feeds in feeds_data.items():
+            for feed_info in feeds:
+                progress += 1
+                feed_url = feed_info['url']
+                message = f"Loaded feed {progress} of {total_feeds} from category: {category}"
+                self.progress_signal.emit(int((progress / total_feeds) * 50), message)
+        
         loop.close()
 
         self.data_loaded_signal.emit(feeds_data)

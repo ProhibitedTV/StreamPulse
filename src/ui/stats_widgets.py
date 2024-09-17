@@ -119,6 +119,21 @@ def fetch_global_co2_emissions():
         return "Data Unavailable"
 
 def create_global_stats_widget():
+    """
+    Creates and sets up a global statistics widget containing real-time data for global statistics.
+    This widget includes information such as U.S. National Debt and Global CO2 Emissions.
+
+    The widget displays two labels:
+    - U.S. National Debt: Fetched from an external API and updated every 60 seconds.
+    - Global CO2 Emissions: Fetched from an external API and updated every 60 seconds.
+
+    The data is fetched asynchronously, and the labels are updated dynamically with the latest information.
+    
+    Timers are used to ensure that the U.S. National Debt and Global CO2 Emissions values are regularly updated.
+
+    Returns:
+        QWidget: A widget containing the global statistics labels and their updates.
+    """
     logging.info("Setting up global statistics widget...")
 
     global_stats_widget = QWidget()

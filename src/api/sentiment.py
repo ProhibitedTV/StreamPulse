@@ -24,11 +24,27 @@ Dependencies:
 
 import aiohttp
 import logging
+import re
 from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
 from api.tts_engine import add_to_tts_queue  # Import for TTS notifications
 
 # Initialize logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def clean_text_for_tts(text):
+    """
+    Cleans up text to make it sound more natural when spoken by the TTS engine.
+    - Removes URLs.
+    - Shortens or simplifies awkward phrases.
+
+    :param text: The original text for analysis.
+    :return: Cleaned text, more appropriate for TTS.
+    """
+    # Remove URLs (http://, https://, www.) to avoid awkward TTS reading
+    cleaned_text = re.sub(r'http\S+|www\S+', '', text)
+    
+    # Optionally, add more replacements for common awkward phrases if needed
+    return cleaned_text.strip()
 
 async def list_models():
     """
@@ -86,6 +102,9 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
 
     logging.info(f"Starting sentiment and bias analysis for text: {text[:50]}...")
 
+    # Clean the input text before sending it to Ollama for analysis
+    cleaned_input = clean_text_for_tts(text)
+
     # Fetch available models asynchronously
     available_models = await list_models()
     if available_models == "error":
@@ -105,7 +124,7 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
     url = "http://localhost:11434/api/generate"
     data = {
         "model": model,
-        "prompt": prompt_template.format(text=text),
+        "prompt": prompt_template.format(text=cleaned_input),  # Use cleaned input text here
         "stream": stream
     }
 
@@ -114,12 +133,18 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
             async with session.post(url, json=data) as response:
                 if response.status != 200:
                     raise aiohttp.ClientError(f"HTTP Error: {response.status}")
+                
                 result = (await response.json()).get('response', 'neutral').strip().lower()
                 logging.info(f"Sentiment and bias analysis result: {result}")
+
+                # Clean the text before passing to TTS for a more natural sounding speech
+                cleaned_result = clean_text_for_tts(result)
+                
                 try:
-                    await add_to_tts_queue(f"Sentiment and bias analysis result: {result}")
+                    await add_to_tts_queue(f"Sentiment and bias analysis result: {cleaned_result}")
                 except Exception as e:
                     logging.error(f"Error adding text to TTS queue: {e}")
+
                 update_ui(root, label, f"Sentiment and bias analysis result: {result}")
                 return result
 
