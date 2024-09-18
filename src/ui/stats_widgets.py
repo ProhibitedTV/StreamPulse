@@ -139,19 +139,26 @@ def create_global_stats_widget():
     global_stats_widget = QWidget()
     layout = QVBoxLayout(global_stats_widget)
 
+    # Set semi-transparent background and padding
+    global_stats_widget.setStyleSheet("""
+        background-color: rgba(0, 0, 0, 150); /* Semi-transparent black */
+        border-radius: 10px;
+        padding: 10px;
+    """)
+
     # Add global stats label
     global_stats_label = QLabel("Global Stats", global_stats_widget)
-    global_stats_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+    global_stats_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
     layout.addWidget(global_stats_label)
 
     # Add US National Debt label
     us_debt_label = QLabel("US National Debt: Fetching...", global_stats_widget)
-    us_debt_label.setStyleSheet("font-size: 14px;")
+    us_debt_label.setStyleSheet("font-size: 14px; color: #b0b0b0;")
     layout.addWidget(us_debt_label)
 
     # Add Global CO2 Emissions label
     co2_emission_label = QLabel("Global CO2 Emissions: Fetching...", global_stats_widget)
-    co2_emission_label.setStyleSheet("font-size: 14px;")
+    co2_emission_label.setStyleSheet("font-size: 14px; color: #b0b0b0;")
     layout.addWidget(co2_emission_label)
 
     def update_us_debt():
@@ -191,6 +198,13 @@ def create_world_clock_widget():
     world_clock_widget = QWidget()
     layout = QVBoxLayout(world_clock_widget)
 
+    # Set semi-transparent background and padding
+    world_clock_widget.setStyleSheet("""
+        background-color: rgba(0, 0, 0, 150); /* Semi-transparent black */
+        border-radius: 10px;
+        padding: 10px;
+    """)
+
     # Define cities and time zones
     cities = {
         "New York": "America/New_York",
@@ -202,7 +216,7 @@ def create_world_clock_widget():
 
     # Add world clock label
     clock_label = QLabel("World Clock", world_clock_widget)
-    clock_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+    clock_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
     layout.addWidget(clock_label)
 
     # Create labels for each city
@@ -210,7 +224,7 @@ def create_world_clock_widget():
 
     for city, tz in cities.items():
         city_label = QLabel(f"{city}: Fetching...", world_clock_widget)
-        city_label.setStyleSheet("font-size: 14px;")
+        city_label.setStyleSheet("font-size: 14px; color: #b0b0b0;")
         layout.addWidget(city_label)
         time_labels[city] = city_label
 
