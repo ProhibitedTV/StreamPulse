@@ -20,7 +20,7 @@ Functions:
 import os
 import logging
 from PyQt5.QtWidgets import QLabel, QWidget, QVBoxLayout, QProgressBar
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QFontMetrics
 from PyQt5.QtCore import QSize, Qt
 from api.fetchers import fetch_image
 
@@ -94,25 +94,34 @@ async def create_story_card(story, category, parent_frame):
     if len(description) > MAX_DESCRIPTION_LENGTH:
         description = description[:MAX_DESCRIPTION_LENGTH] + "..."
 
-    # Log if there's no image or description
-    if not headline:
-        logging.warning(f"Story is missing a title: {story}")
-    if not description:
-        logging.warning(f"Story is missing a description: {story}")
-
     # Create a story card layout
     story_card = QWidget(parent_frame)
     layout = QVBoxLayout(story_card)
 
+    # Apply more transparent background to the story card
+    story_card.setStyleSheet("""
+        background-color: rgba(44, 62, 80, 0.6);  /* Dark blue with 60% opacity */
+        border-radius: 10px;
+        padding: 8px;
+        margin-bottom: 5px;
+    """)
+
     # Category title label
     category_label = QLabel(category, parent_frame)
-    category_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ecf0f1;")
+    category_label.setStyleSheet("""
+        font-size: 24px;
+        font-weight: bold;
+        color: #e74c3c;
+        padding: 10px;
+    """)
     layout.addWidget(category_label)
 
-    # Headline label
+    # Headline label with ellipsis for overflow using QFontMetrics
     headline_label = QLabel(headline, parent_frame)
     headline_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-    headline_label.setWordWrap(True)
+    font_metrics = QFontMetrics(headline_label.font())
+    elided_text = font_metrics.elidedText(headline, Qt.ElideRight, 380)  # Truncate with ellipsis if too long
+    headline_label.setText(elided_text)
     layout.addWidget(headline_label)
 
     # Description label

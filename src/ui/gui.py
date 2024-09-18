@@ -25,10 +25,12 @@ Functions:
 - rotate_through_categories: Rotates between different news categories and automatically refreshes stories.
 """
 
+import os
 import logging
 import asyncio
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QFrame, QWidget, QGridLayout, QMainWindow, QSizePolicy, QScrollArea, QTextEdit, QProgressBar
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtGui import QPalette, QBrush, QPixmap
 from ui.story_display import create_story_card, clear_widgets
 from api.sentiment import analyze_text
 from api.tts_engine import add_to_tts_queue
@@ -47,11 +49,22 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("StreamPulse News")
         self.setFixedSize(1920, 1080)  # Ensure window fits within 1080p display
-        self.setStyleSheet("""
-            background-color: #2c3e50; color: white;
-            QFrame { background-color: #34495e; border-radius: 10px; }
-            QLabel { color: #ecf0f1; }
-        """)
+        
+        # Use the absolute path to the bg.png file
+        background_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../images/bg.png'))
+        logging.info(f"Background image path: {background_image_path}")
+        
+        # Set background using QPalette with scaling to avoid tiling
+        palette = QPalette()
+        pixmap = QPixmap(background_image_path)
+        if not pixmap.isNull():
+            # Scale the background to fit the window and maintain aspect ratio without tiling
+            scaled_pixmap = pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            palette.setBrush(QPalette.Window, QBrush(scaled_pixmap))
+        else:
+            logging.error("Failed to load background image")
+        self.setPalette(palette)
+        
         self.feeds_data = feeds_data  # RSS feeds data loaded in loading_screen.py
         self.stock_data = stock_data  # Stock data loaded in loading_screen.py
         self.current_story_index = {}  # To track the current story index for each category

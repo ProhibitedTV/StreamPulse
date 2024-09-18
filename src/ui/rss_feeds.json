@@ -1,5 +1,5 @@
 {
-    "general": [
+    "General": [
         "http://rss.cnn.com/rss/edition_americas.rss",
         "http://feeds.bbci.co.uk/news/world/rss.xml",
         "https://www.npr.org/rss/rss.php?id=1001",
@@ -11,7 +11,7 @@
         "https://www.infowars.com/rss.xml",
         "https://feeds.thelocal.com/rss/es"
     ],
-    "financial": [
+    "Financial": [
         "https://www.investing.com/rss/news_25.rss",
         "https://feeds.marketwatch.com/marketwatch/topstories",
         "https://seekingalpha.com/feed.xml",
@@ -22,7 +22,7 @@
         "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
         "https://www.moneycontrol.com/rss/latestnews.xml"
     ],
-    "video_games": [
+    "Video Games": [
         "https://kotaku.com/rss",
         "https://feeds.feedburner.com/Polygon",
         "https://www.theverge.com/rss/frontpage",
@@ -32,7 +32,7 @@
         "https://www.eurogamer.net/?format=rss",
         "https://www.reddit.com/r/gaming.rss"
     ],
-    "science_tech": [
+    "Science & Tech": [
         "https://techcrunch.com/feed/",
         "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
         "https://www.nasa.gov/rss/dyn/breaking_news.rss",
@@ -42,7 +42,7 @@
         "https://www.engadget.com/rss.xml",
         "https://www.newscientist.com/subject/space/feed/"
     ],
-    "health_environment": [
+    "Health & Environment": [
         "https://www.who.int/feeds/entity/csr/don/en/rss.xml",
         "https://feeds.washingtonpost.com/rss/lifestyle",
         "https://www.npr.org/rss/rss.php?id=1027",
@@ -52,7 +52,7 @@
         "https://feeds.feedburner.com/theecologist",
         "https://www.bbc.co.uk/news/science_and_environment/rss.xml"
     ],
-    "entertainment": [
+    "Entertainment": [
         "https://variety.com/feed/",
         "https://feeds.feedburner.com/ewallstreeter",
         "https://www.tmz.com/rss.xml",

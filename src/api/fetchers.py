@@ -52,9 +52,33 @@ RSS_FETCH_TIMEOUT = 15  # 15 seconds timeout for RSS fetching
 DEFAULT_IMAGE_PATH = "../../images/default.png"  # Default fallback image path
 CACHE_DIR = "../../cache/images"  # Directory for caching images
 STOCKS = [
+    # Technology
     "AAPL", "GOOGL", "MSFT", "AMZN", "META", "TSLA", "NFLX", "NVDA", "AMD", "INTC",
-    "JPM", "BAC", "WFC", "GS", "C", "XOM", "CVX", "BP", "COP", "OXY", "PFE", "JNJ", 
-    "MRNA", "BMY", "LLY"
+    "ORCL", "CSCO", "IBM", "ADBE", "CRM",
+    
+    # Financials
+    "JPM", "BAC", "WFC", "GS", "C", "MS", "AXP", "SCHW", "V", "MA",
+    
+    # Energy
+    "XOM", "CVX", "BP", "COP", "OXY", "SLB", "TOT", "RDS.A", "EOG",
+    
+    # Healthcare
+    "PFE", "JNJ", "MRNA", "BMY", "LLY", "GILD", "UNH", "CVS", "ABT", "AMGN",
+    
+    # Consumer Goods
+    "PG", "KO", "PEP", "MCD", "WMT", "TGT", "HD", "NKE", "COST",
+    
+    # Industrials
+    "BA", "CAT", "GE", "UPS", "FDX", "LMT",
+    
+    # Communication Services
+    "DIS", "VZ", "T", "CMCSA", "TMUS",
+    
+    # Utilities
+    "DUK", "SO", "NEE",
+    
+    # Real Estate
+    "PLD", "AMT"
 ]
 
 # Load environment variables
