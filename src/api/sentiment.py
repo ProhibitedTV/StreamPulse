@@ -1,32 +1,35 @@
 """
 api/sentiment.py
 
-This module is responsible for performing sentiment and political bias analysis using a local Ollama instance,
-with the operations running asynchronously to avoid blocking the main PyQt5 interface.
+This module provides functions for performing sentiment and political bias analysis using a local Ollama instance,
+with operations running asynchronously to avoid blocking the main PyQt5 interface. It allows dynamic model selection
+based on the models available from the Ollama instance and updates the user interface (UI) with the analysis results.
 
-The module includes functions for fetching available models from Ollama, analyzing text for sentiment and political bias,
-and updating the user interface (UI) based on the analysis results. It integrates with a text-to-speech (TTS) engine to 
-provide vocal feedback. 
+Key Features:
+    - Dynamically selects the analysis model from available options if a model is not provided or unavailable.
+    - Integrates with the TTS engine to provide vocal feedback on the analysis results.
+    - Updates the PyQt5 UI asynchronously to avoid blocking the main event loop.
 
-Key Functions:
-    - list_models: Asynchronously fetches the list of available models from Ollama.
-    - analyze_text: Asynchronously analyzes text for sentiment and political bias, updating the UI and providing TTS feedback.
-    - update_ui: Updates the PyQt5 UI with the sentiment and bias analysis result.
-
-Logging is used to record all actions and potential errors, ensuring easy debugging and monitoring of the analysis process.
+Main Functions:
+    - list_models: Asynchronously fetches the list of available models from Ollama, handling errors gracefully.
+    - analyze_text: Sends the provided text to the Ollama instance for sentiment and bias analysis, updating the UI 
+      with the result, and optionally adding the result to the TTS queue.
+    - update_ui: Updates the PyQt5 UI with the sentiment and bias result using thread-safe methods.
 
 Dependencies:
-    - aiohttp: For asynchronous HTTP requests.
-    - asyncio: To manage asynchronous tasks.
-    - PyQt5: For updating the graphical user interface.
-    - TTS Engine: Integrated for adding text-to-speech feedback.
+    - aiohttp: For handling asynchronous HTTP requests.
+    - PyQt5: To update the graphical user interface.
+    - TTS Engine: Integrated to handle text-to-speech feedback for the analysis results.
+
+This module is used in conjunction with a graphical user interface (GUI) to display and vocalize sentiment analysis
+of news stories or other text-based content in real-time.
 """
 
 import aiohttp
 import logging
 import re
-from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
-from api.tts_engine import add_to_tts_queue  # Import for TTS notifications
+from PyQt5.QtCore import QMetaObject, Q_ARG
+from api.tts_engine import add_to_tts_queue, tts_is_speaking
 
 # Initialize logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,10 +43,7 @@ def clean_text_for_tts(text):
     :param text: The original text for analysis.
     :return: Cleaned text, more appropriate for TTS.
     """
-    # Remove URLs (http://, https://, www.) to avoid awkward TTS reading
-    cleaned_text = re.sub(r'http\S+|www\S+', '', text)
-    
-    # Optionally, add more replacements for common awkward phrases if needed
+    cleaned_text = re.sub(r'http\S+|www\S+', '', text)  # Remove URLs for better TTS output
     return cleaned_text.strip()
 
 async def list_models():
@@ -56,7 +56,6 @@ async def list_models():
     :return: A list of model names or 'error' if an issue occurs.
     """
     url = "http://localhost:11434/api/tags"
-
     try:
         logging.info("Attempting to fetch available models from Ollama...")
         async with aiohttp.ClientSession() as session:
@@ -67,21 +66,18 @@ async def list_models():
                 models = [model['name'] for model in models_data.get('models', [])]
                 logging.info(f"Available models fetched successfully: {models}")
                 return models
-
     except aiohttp.ClientError as e:
         error_message = f"Error fetching models from Ollama: {e}"
         logging.error(error_message)
         await add_to_tts_queue(error_message)
         return "error"
-
     except Exception as e:
         error_message = f"Unexpected error occurred during model fetching: {e}"
         logging.error(error_message)
         await add_to_tts_queue("Unexpected error occurred while fetching models.")
         return "error"
 
-
-async def analyze_text(text, root, label, model="llama3:latest", prompt_template=None, stream=False):
+async def analyze_text(text, root, label, model=None, prompt_template=None, stream=False):
     """
     Asynchronously sends a request to the local Ollama instance for text analysis (sentiment and political bias)
     and updates the PyQt5 UI.
@@ -89,7 +85,7 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
     :param text: The input text for analysis.
     :param root: The PyQt5 root QWidget instance, used to update the UI.
     :param label: The PyQt5 QLabel widget where the sentiment and bias result will be displayed.
-    :param model: The model to use for analysis (default is 'llama3:latest').
+    :param model: The model to use for analysis. If None, a model will be chosen from available models.
     :param prompt_template: The prompt template to send to the model.
     :param stream: Boolean indicating if streaming mode should be enabled. Default is False.
     :return: The analysis result from Ollama or 'neutral'/'error'/'model_error' in case of issues.
@@ -107,24 +103,22 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
 
     # Fetch available models asynchronously
     available_models = await list_models()
-    if available_models == "error":
-        error_message = "Failed to retrieve model list."
+    if available_models == "error" or not available_models:
+        error_message = "Failed to retrieve model list or no models available."
         logging.error(error_message)
         await add_to_tts_queue(error_message)
         update_ui(root, label, error_message)
         return "error"
 
-    if model not in available_models:
-        error_message = f"Model '{model}' not found. Available models: {available_models}"
-        logging.error(error_message)
-        await add_to_tts_queue(error_message)
-        update_ui(root, label, error_message)
-        return "model_error"
+    # If no model was provided or the provided model is not available, choose the first available one
+    if not model or model not in available_models:
+        logging.warning(f"Model '{model}' not found. Using the first available model: {available_models[0]}")
+        model = available_models[0]
 
     url = "http://localhost:11434/api/generate"
     data = {
         "model": model,
-        "prompt": prompt_template.format(text=cleaned_input),  # Use cleaned input text here
+        "prompt": prompt_template.format(text=cleaned_input),
         "stream": stream
     }
 
@@ -137,14 +131,20 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
                 result = (await response.json()).get('response', 'neutral').strip().lower()
                 logging.info(f"Sentiment and bias analysis result: {result}")
 
-                # Clean the text before passing to TTS for a more natural sounding speech
+                # Clean the result before passing to TTS for a more natural sounding speech
                 cleaned_result = clean_text_for_tts(result)
                 
                 try:
-                    await add_to_tts_queue(f"Sentiment and bias analysis result: {cleaned_result}")
+                    # Only add to the TTS queue if the TTS engine is not already speaking
+                    if not tts_is_speaking():
+                        await add_to_tts_queue(f"Sentiment and bias analysis result: {cleaned_result}")
+                        logging.info(f"Added sentiment result to TTS queue: {cleaned_result}")
+                    else:
+                        logging.info("TTS is currently speaking, will not add a new item to the queue yet.")
                 except Exception as e:
                     logging.error(f"Error adding text to TTS queue: {e}")
 
+                # Update the UI with the result
                 update_ui(root, label, f"Sentiment and bias analysis result: {result}")
                 return result
 
@@ -167,7 +167,6 @@ async def analyze_text(text, root, label, model="llama3:latest", prompt_template
             logging.error(f"Error adding error message to TTS queue: {e}")
         update_ui(root, label, error_message)
         return "error"
-
 
 def update_ui(root, label, text):
     """

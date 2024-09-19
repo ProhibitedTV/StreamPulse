@@ -10,13 +10,14 @@ Functions:
     add_to_tts_queue - Adds text to the TTS queue for conversion to speech.
     start_tts_thread - Starts the background thread for processing TTS requests.
     stop_tts_thread - Stops the TTS processing thread gracefully.
+    tts_is_speaking - Returns True if the TTS engine is currently speaking, False otherwise.
     shutdown_tts - Shuts down the TTS engine and stops the TTS thread.
 """
 
-import asyncio
 import pyttsx3
 import queue
 import logging
+import time
 from utils.threading import run_in_thread
 
 # Initialize logger
@@ -33,13 +34,47 @@ except Exception as e:
 # Initialize a queue for TTS requests
 tts_queue = queue.Queue()
 
+# Variable to track if the engine is actually speaking
+tts_busy = False
+
+def on_start(name):
+    """
+    Event handler triggered when the TTS engine starts speaking.
+    """
+    global tts_busy
+    logging.info(f"Speech started for: {name}")
+    tts_busy = True
+
+def on_end(name, completed):
+    """
+    Event handler triggered when the TTS engine finishes speaking.
+    """
+    global tts_busy
+    logging.info(f"Speech finished for: {name}")
+    tts_busy = False
+
+# Attach event listeners to the engine
+if engine:
+    engine.connect('started-utterance', on_start)
+    engine.connect('finished-utterance', on_end)
+
+def tts_is_speaking():
+    """
+    Returns True if the TTS engine is currently speaking, False otherwise.
+    
+    This function checks the tts_busy state to determine if speech is active.
+    """
+    logging.info(f"TTS engine busy state: {tts_busy}")
+    return tts_busy
+
 def process_tts_queue():
     """
     Continuously processes the TTS queue, converting text to speech using pyttsx3.
     
     Runs in a separate thread to avoid blocking the main application. The function retrieves
     text from the queue and passes it to the TTS engine. It exits gracefully when a 'None'
-    signal is added to the queue.
+    signal is added to the queue. A timeout mechanism is added to prevent the engine from 
+    getting stuck in a busy state for too long.
     """
     if not engine:
         logging.error("TTS engine is not initialized. Exiting TTS queue processing.")
@@ -54,7 +89,17 @@ def process_tts_queue():
             
             logging.info(f"Processing TTS request: {text}")
             engine.say(text)
-            engine.runAndWait()
+            
+            # Set a timeout for safety (e.g., 10 seconds)
+            start_time = time.time()
+            while tts_is_speaking():
+                if time.time() - start_time > 10:  # Timeout after 10 seconds
+                    logging.warning("TTS engine timeout reached. Forcing stop.")
+                    engine.endLoop()  # Force stop the TTS engine
+                    break
+                time.sleep(0.5)  # Check every 0.5 seconds
+            
+            engine.runAndWait()  # Blocks until the current text is finished speaking
             tts_queue.task_done()
         except Exception as e:
             logging.error(f"Error processing TTS request: {e}")
