@@ -197,15 +197,18 @@ class MainWindow(QMainWindow):
         """Fetch the latest sentiment analysis result for the currently displayed story."""
         for category, (story_card, stories, progress_bar) in self.story_widgets.items():
             current_index = self.current_story_index.get(category, 0)
-            story_title = stories[current_index].get('title', 'No title available')
-            story_description = stories[current_index].get('description', 'No description available')
+            story = stories[current_index]
+            story_title = story.get('title', 'No title available')
+            story_description = story.get('description', 'No description available')
             full_text = f"Title: {story_title}. Description: {story_description}"
+            story_id = story.get('id', story_title)  # Use story 'id' or 'title' as the unique identifier
 
             logging.info(f"Analyzing text for story: {story_title}")
             sentiment_result = await analyze_text(
                 full_text,
                 root=self,
                 label=self.sentiment_label,
+                story_id=story_id,  # Pass the unique story identifier
                 model="llama3:latest"  # You can change this to use dynamic model selection
             )
             logging.info(f"Sentiment result for {story_title}: {sentiment_result}")

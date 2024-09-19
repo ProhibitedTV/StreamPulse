@@ -60,7 +60,7 @@ STOCKS = [
     "JPM", "BAC", "WFC", "GS", "C", "MS", "AXP", "SCHW", "V", "MA",
     
     # Energy
-    "XOM", "CVX", "BP", "COP", "OXY", "SLB", "TOT", "RDS.A", "EOG",
+    "XOM", "CVX", "BP", "COP", "OXY", "SLB", "EOG",
     
     # Healthcare
     "PFE", "JNJ", "MRNA", "BMY", "LLY", "GILD", "UNH", "CVS", "ABT", "AMGN",

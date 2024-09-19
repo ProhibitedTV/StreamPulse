@@ -101,6 +101,7 @@ def process_tts_queue():
             
             engine.runAndWait()  # Blocks until the current text is finished speaking
             tts_queue.task_done()
+
         except Exception as e:
             logging.error(f"Error processing TTS request: {e}")
             tts_queue.task_done()

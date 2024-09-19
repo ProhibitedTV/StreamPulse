@@ -25,6 +25,7 @@ This module is used in conjunction with a graphical user interface (GUI) to disp
 of news stories or other text-based content in real-time.
 """
 
+import asyncio
 import aiohttp
 import logging
 import re
@@ -33,6 +34,9 @@ from api.tts_engine import add_to_tts_queue, tts_is_speaking
 
 # Initialize logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Set to track processed stories
+processed_story_ids = set()
 
 def clean_text_for_tts(text):
     """
@@ -77,7 +81,7 @@ async def list_models():
         await add_to_tts_queue("Unexpected error occurred while fetching models.")
         return "error"
 
-async def analyze_text(text, root, label, model=None, prompt_template=None, stream=False):
+async def analyze_text(text, root, label, story_id, model=None, prompt_template=None, stream=False):
     """
     Asynchronously sends a request to the local Ollama instance for text analysis (sentiment and political bias)
     and updates the PyQt5 UI.
@@ -85,18 +89,24 @@ async def analyze_text(text, root, label, model=None, prompt_template=None, stre
     :param text: The input text for analysis.
     :param root: The PyQt5 root QWidget instance, used to update the UI.
     :param label: The PyQt5 QLabel widget where the sentiment and bias result will be displayed.
+    :param story_id: The unique identifier of the story.
     :param model: The model to use for analysis. If None, a model will be chosen from available models.
     :param prompt_template: The prompt template to send to the model.
     :param stream: Boolean indicating if streaming mode should be enabled. Default is False.
     :return: The analysis result from Ollama or 'neutral'/'error'/'model_error' in case of issues.
     """
+    # Skip the analysis if the story was already processed
+    if story_id in processed_story_ids:
+        logging.info(f"Story '{story_id}' already processed, skipping.")
+        return "already_processed"
+
     if not prompt_template:
         prompt_template = (
             "Analyze the following text for sentiment (positive, negative, or neutral) and political bias "
             "(left-wing or right-wing): {text}"
         )
 
-    logging.info(f"Starting sentiment and bias analysis for text: {text[:50]}...")
+    logging.info(f"Starting sentiment and bias analysis for story: {story_id}")
 
     # Clean the input text before sending it to Ollama for analysis
     cleaned_input = clean_text_for_tts(text)
@@ -144,8 +154,17 @@ async def analyze_text(text, root, label, model=None, prompt_template=None, stre
                 except Exception as e:
                     logging.error(f"Error adding text to TTS queue: {e}")
 
+                # Wait for TTS to finish speaking before updating the UI
+                while tts_is_speaking():
+                    await asyncio.sleep(0.5)  # Sleep briefly to check again
+
                 # Update the UI with the result
                 update_ui(root, label, f"Sentiment and bias analysis result: {result}")
+
+                # Mark story as processed after TTS finishes
+                processed_story_ids.add(story_id)
+                logging.info(f"Story '{story_id}' marked as processed.")
+                
                 return result
 
     except aiohttp.ClientError as e:
