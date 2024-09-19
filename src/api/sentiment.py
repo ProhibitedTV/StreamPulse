@@ -102,8 +102,11 @@ async def analyze_text(text, root, label, story_id, model=None, prompt_template=
 
     if not prompt_template:
         prompt_template = (
-            "Analyze the following text for sentiment (positive, negative, or neutral) and political bias "
-            "(left-wing or right-wing): {text}"
+            "You are a professional news anchor delivering an analysis on the following news story. "
+            "Please provide a clear and formal sentiment analysis of the story (positive, negative, or neutral), "
+            "and identify any political bias (left-wing or right-wing) in the text. Speak with authority and "
+            "clarity as though you are broadcasting live to a wide audience. "
+            "Here is the news story: {text}"
         )
 
     logging.info(f"Starting sentiment and bias analysis for story: {story_id}")
